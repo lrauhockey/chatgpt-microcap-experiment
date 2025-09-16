@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Market Predictor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .stock-card {
+            transition: transform 0.2s;
+        }
+        .stock-card:hover {
+            transform: translateY(-5px);
+        }
+        .positive { color: #28a745; }
+        .negative { color: #dc3545; }
+        .loading {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="text-center mb-4">🚀 Stock Market Predictor & Portfolio Manager</h1>
+                <p class="text-center text-muted">Get real-time stock quotes, manage your portfolio, and track investments</p>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="quotes-tab" data-bs-toggle="tab" data-bs-target="#quotes" type="button" role="tab">📊 Stock Quotes</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="portfolio-tab" data-bs-toggle="tab" data-bs-target="#portfolio" type="button" role="tab">💼 Portfolio</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="trade-tab" data-bs-toggle="tab" data-bs-target="#trade" type="button" role="tab">💰 Buy/Sell</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="transactions-tab" data-bs-toggle="tab" data-bs-target="#transactions" type="button" role="tab">📋 Transactions</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="ai-predictor-tab" data-bs-toggle="tab" data-bs-target="#ai-predictor" type="button" role="tab">🤖 AI Predictor</button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="tab-content" id="mainTabContent">
+            <!-- Stock Quotes Tab -->
+            <div class="tab-pane fade" id="quotes" role="tabpanel">
+                <div class="row mb-4">
+                    <div class="col-md-8 mx-auto">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Get Stock Quote</h5>
+                                <div class="input-group mb-3">
+                                    <input type="text" class="form-control" id="stockSymbol" placeholder="Enter stock symbol (e.g., AAPL, GOOGL, TSLA)" value="AAPL">
+                                    <button class="btn btn-primary" type="button" id="getQuoteBtn">Get Quote</button>
+                                </div>
+                                <div class="input-group mb-3">
+                                    <input type="text" class="form-control" id="multipleSymbols" placeholder="Multiple symbols (comma-separated): AAPL,GOOGL,TSLA">
+                                    <button class="btn btn-secondary" type="button" id="getMultipleBtn">Get Multiple</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Portfolio Tab -->
+            <div class="tab-pane fade show active" id="portfolio" role="tabpanel">
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Portfolio Summary</h5>
+                                <div id="portfolioSummary">
+                                    <div class="text-center">
+                                        <div class="spinner-border" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row" id="holdingsContainer"></div>
+
+                <!-- Performance Chart Section -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h5 class="card-title">📈 Portfolio Performance</h5>
+                                    <div>
+                                        <button class="btn btn-outline-primary btn-sm me-2" id="refreshDataBtn">
+                                            🔄 Refresh Data
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm" id="refreshQuotesBtn">
+                                            💰 Override Cache
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Performance Chart -->
+                                <div id="performanceChartContainer" style="display: none;">
+                                    <canvas id="performanceChart" width="400" height="200"></canvas>
+                                </div>
+                                
+                                <!-- Performance Summary -->
+                                <div id="performanceSummary" class="mt-3" style="display: none;">
+                                    <div class="row text-center">
+                                        <div class="col-md-6">
+                                            <div class="card bg-light">
+                                                <div class="card-body">
+                                                    <h6 class="card-title">Total Gain/Loss</h6>
+                                                    <h4 id="totalGainLoss" class="mb-0">$0.00</h4>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="card bg-light">
+                                                <div class="card-body">
+                                                    <h6 class="card-title">Total Return %</h6>
+                                                    <h4 id="totalGainLossPercent" class="mb-0">0.00%</h4>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div id="performanceLoading" class="text-center">
+                                    <div class="spinner-border" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p class="mt-2">Loading performance data...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Buy/Sell Tab -->
+            <div class="tab-pane fade" id="trade" role="tabpanel">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title text-success">💰 Buy Stock</h5>
+                                <form id="buyForm">
+                                    <div class="mb-3">
+                                        <label for="buyTicker" class="form-label">Stock Symbol</label>
+                                        <input type="text" class="form-control" id="buyTicker" placeholder="e.g., AAPL" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="buyQuantity" class="form-label">Quantity</label>
+                                        <input type="number" class="form-control" id="buyQuantity" min="1" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="buyReason" class="form-label">Reason</label>
+                                        <input type="text" class="form-control" id="buyReason" placeholder="Why are you buying?" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="buyStopPrice" class="form-label">Stop Price (Optional)</label>
+                                        <input type="number" class="form-control" id="buyStopPrice" step="0.01" placeholder="Stop loss price">
+                                    </div>
+                                    <button type="submit" class="btn btn-success w-100">Buy Stock</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title text-danger">📉 Sell Stock</h5>
+                                <form id="sellForm">
+                                    <div class="mb-3">
+                                        <label for="sellTicker" class="form-label">Stock Symbol</label>
+                                        <input type="text" class="form-control" id="sellTicker" placeholder="e.g., AAPL" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="sellQuantity" class="form-label">Quantity</label>
+                                        <input type="number" class="form-control" id="sellQuantity" min="1" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="sellReason" class="form-label">Reason</label>
+                                        <input type="text" class="form-control" id="sellReason" placeholder="Why are you selling?" required>
+                                    </div>
+                                    <button type="submit" class="btn btn-danger w-100">Sell Stock</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="alert alert-info">
+                            <strong>💡 How it works:</strong> Enter a stock symbol and quantity. The system will automatically get the current market price and execute your trade.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transactions Tab -->
+            <div class="tab-pane fade" id="transactions" role="tabpanel">
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Transaction History</h5>
+                                <div id="transactionsContainer">
+                                    <div class="text-center">
+                                        <div class="spinner-border" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Predictor Tab -->
+            <div class="tab-pane fade" id="ai-predictor" role="tabpanel">
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">🤖 AI Stock Recommendations</h5>
+                                <p class="text-muted">Get AI-powered buy and sell recommendations based on your current portfolio</p>
+                                
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="useOpenAIPriceCheckbox">
+                                        <label class="form-check-label" for="useOpenAIPriceCheckbox">
+                                            <strong>Use OpenAI Price</strong> - Skip live stock API calls and use AI-provided prices
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <button class="btn btn-primary" id="getRecommendationsBtn">
+                                    <span class="spinner-border spinner-border-sm d-none" id="aiLoadingSpinner"></span>
+                                    Get AI Recommendations
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sell Recommendations -->
+                <div class="row mb-4" id="sellRecommendationsSection" style="display: none;">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title text-warning">📉 Sell/Hold Recommendations</h5>
+                                <div id="sellRecommendationsContainer"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Buy Recommendations -->
+                <div class="row mb-4" id="buyRecommendationsSection" style="display: none;">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title text-success">📈 Buy Recommendations</h5>
+                                
+                                <!-- Running Cash Total Display -->
+                                <div class="alert alert-info mb-3" id="cashTotalDisplay" style="display: none;">
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <strong>💰 Current Cash:</strong> <span id="currentCash">$0</span>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <strong>📉 Selected Costs:</strong> <span id="selectedCosts">$0</span>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <strong>💵 Remaining Cash:</strong> <span id="remainingCash">$0</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div id="buyRecommendationsContainer"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Execute Trades Button -->
+                <div class="row mb-4" id="executeTradesSection" style="display: none;">
+                    <div class="col-12 text-center">
+                        <button class="btn btn-danger btn-lg" id="executeTradesBtn">
+                            <span class="spinner-border spinner-border-sm d-none" id="executeLoadingSpinner"></span>
+                            🚀 Execute Selected Trades
+                        </button>
+                        <p class="text-muted mt-2">Only checked recommendations will be executed</p>
+                    </div>
+                </div>
+
+                <!-- Results Section -->
+                <div class="row" id="aiResultsSection" style="display: none;">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Execution Results</h5>
+                                <div id="aiResultsContainer"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div class="row loading" id="loadingSpinner">
+            <div class="col-12 text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Fetching stock data...</p>
+            </div>
+        </div>
+
+        <!-- Stock Quote Results -->
+        <div class="row" id="stockResults"></div>
+
+        <!-- Historical Data Chart -->
+        <div class="row mt-4" id="chartContainer" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Historical Data</h5>
+                        <canvas id="stockChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let stockChart = null;
+
+        function showLoading() {
+            document.getElementById('loadingSpinner').style.display = 'block';
+            document.getElementById('stockResults').innerHTML = '';
+            document.getElementById('chartContainer').style.display = 'none';
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingSpinner').style.display = 'none';
+        }
+
+        function displayStockQuote(quote) {
+            const changeClass = quote.change >= 0 ? 'positive' : 'negative';
+            const changeIcon = quote.change >= 0 ? '📈' : '📉';
+            const apiSourceBadge = quote.api_source ? `<span class="badge bg-info ms-2">${quote.api_source}</span>` : '';
+            
+            return `
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card stock-card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">${quote.symbol} ${changeIcon} ${apiSourceBadge}</h5>
+                            <h6 class="card-subtitle mb-2 text-muted">${quote.name}</h6>
+                            <p class="card-text">
+                                <strong class="fs-4">$${quote.current_price}</strong><br>
+                                <span class="${changeClass}">
+                                    ${quote.change >= 0 ? '+' : ''}${quote.change} (${quote.change_percent >= 0 ? '+' : ''}${quote.change_percent}%)
+                                </span>
+                            </p>
+                            <small class="text-muted">
+                                Volume: ${quote.volume?.toLocaleString() || 'N/A'}<br>
+                                Updated: ${quote.timestamp}
+                            </small>
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-primary" onclick="getHistoricalData('${quote.symbol}')">
+                                    View Chart
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function getStockQuote(symbol) {
+            showLoading();
+            try {
+                const response = await fetch(`/api/quote/${symbol}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('stockResults').innerHTML = displayStockQuote(data);
+                } else {
+                    document.getElementById('stockResults').innerHTML = `
+                        <div class="col-12">
+                            <div class="alert alert-danger" role="alert">
+                                Error: ${data.error}
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('stockResults').innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-danger" role="alert">
+                            Error fetching data: ${error.message}
+                        </div>
+                    </div>
+                `;
+            }
+            hideLoading();
+        }
+
+        async function getMultipleQuotes(symbols) {
+            showLoading();
+            try {
+                const response = await fetch(`/api/multiple?symbols=${symbols}`);
+                const data = await response.json();
+                
+                if (response.ok && data.quotes.length > 0) {
+                    let html = '';
+                    data.quotes.forEach(quote => {
+                        html += displayStockQuote(quote);
+                    });
+                    document.getElementById('stockResults').innerHTML = html;
+                } else {
+                    document.getElementById('stockResults').innerHTML = `
+                        <div class="col-12">
+                            <div class="alert alert-warning" role="alert">
+                                No valid stock data found for the provided symbols.
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('stockResults').innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-danger" role="alert">
+                            Error fetching data: ${error.message}
+                        </div>
+                    </div>
+                `;
+            }
+            hideLoading();
+        }
+
+        async function getHistoricalData(symbol) {
+            try {
+                const response = await fetch(`/api/historical/${symbol}?period=1mo`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayChart(data);
+                }
+            } catch (error) {
+                console.error('Error fetching historical data:', error);
+            }
+        }
+
+        function displayChart(data) {
+            const ctx = document.getElementById('stockChart').getContext('2d');
+            
+            if (stockChart) {
+                stockChart.destroy();
+            }
+
+            const labels = data.data.map(item => item.date);
+            const prices = data.data.map(item => item.close);
+
+            stockChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: `${data.symbol} Close Price`,
+                        data: prices,
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Price ($)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        }
+                    }
+                }
+            });
+
+            document.getElementById('chartContainer').style.display = 'block';
+        }
+
+        // Event listeners
+        document.getElementById('getQuoteBtn').addEventListener('click', () => {
+            const symbol = document.getElementById('stockSymbol').value.trim();
+            if (symbol) {
+                getStockQuote(symbol);
+            }
+        });
+
+        document.getElementById('getMultipleBtn').addEventListener('click', () => {
+            const symbols = document.getElementById('multipleSymbols').value.trim();
+            if (symbols) {
+                getMultipleQuotes(symbols);
+            }
+        });
+
+        // Allow Enter key to trigger search
+        document.getElementById('stockSymbol').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('getQuoteBtn').click();
+            }
+        });
+
+        document.getElementById('multipleSymbols').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('getMultipleBtn').click();
+            }
+        });
+
+        // Portfolio management functions
+        async function loadPortfolioSummary() {
+            try {
+                const response = await fetch('/api/portfolio/summary');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayPortfolioSummary(data);
+                } else {
+                    document.getElementById('portfolioSummary').innerHTML = `
+                        <div class="alert alert-danger">Error: ${data.error}</div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('portfolioSummary').innerHTML = `
+                    <div class="alert alert-danger">Error loading portfolio: ${error.message}</div>
+                `;
+            }
+        }
+
+        function displayPortfolioSummary(data) {
+            const summaryHtml = `
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h5>💰 Cash Balance</h5>
+                                <h3>$${data.cash_balance.toLocaleString()}</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h5>📈 Market Value</h5>
+                                <h3>$${data.total_market_value.toLocaleString()}</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-info text-white">
+                            <div class="card-body text-center">
+                                <h5>💼 Total Portfolio</h5>
+                                <h3>$${data.total_portfolio_value.toLocaleString()}</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h5>📊 Holdings</h5>
+                                <h3>${data.holdings_count}</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('portfolioSummary').innerHTML = summaryHtml;
+            
+            // Display holdings
+            let holdingsHtml = '';
+            data.holdings.forEach(holding => {
+                const gainLoss = holding.total_market_value - (holding.quantity * holding.average_cost);
+                const gainLossPercent = ((holding.total_market_value / (holding.quantity * holding.average_cost)) - 1) * 100;
+                const gainLossClass = gainLoss >= 0 ? 'text-success' : 'text-danger';
+                
+                holdingsHtml += `
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">${holding.ticker}</h5>
+                                <p class="card-text">
+                                    <strong>Quantity:</strong> ${holding.quantity}<br>
+                                    <strong>Avg Cost:</strong> $${holding.average_cost.toFixed(2)}<br>
+                                    <strong>Market Value:</strong> $${holding.total_market_value.toLocaleString()}<br>
+                                    <span class="${gainLossClass}">
+                                        <strong>P&L:</strong> ${gainLoss >= 0 ? '+' : ''}$${gainLoss.toFixed(2)} (${gainLossPercent >= 0 ? '+' : ''}${gainLossPercent.toFixed(2)}%)
+                                    </span>
+                                </p>
+                                <div class="d-grid">
+                                    <button class="btn btn-danger btn-sm" onclick="sellHolding('${holding.ticker}', ${holding.quantity})">
+                                        📉 Sell ${holding.ticker}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('holdingsContainer').innerHTML = holdingsHtml;
+        }
+
+        async function loadTransactions() {
+            try {
+                const response = await fetch('/api/portfolio/transactions');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayTransactions(data.transactions);
+                } else {
+                    document.getElementById('transactionsContainer').innerHTML = `
+                        <div class="alert alert-danger">Error: ${data.error}</div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('transactionsContainer').innerHTML = `
+                    <div class="alert alert-danger">Error loading transactions: ${error.message}</div>
+                `;
+            }
+        }
+
+        function displayTransactions(transactions) {
+            if (transactions.length === 0) {
+                document.getElementById('transactionsContainer').innerHTML = `
+                    <div class="alert alert-info">No transactions yet. Start trading to see your history here!</div>
+                `;
+                return;
+            }
+
+            let tableHtml = `
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Ticker</th>
+                                <th>Type</th>
+                                <th>Quantity</th>
+                                <th>Price</th>
+                                <th>Total</th>
+                                <th>Reason</th>
+                                <th>P&L</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            transactions.reverse().forEach(tx => {
+                const isBuy = tx.quantity && tx.buy_price;
+                const isSell = tx.sell_quantity && tx.sell_price;
+                
+                tableHtml += `
+                    <tr>
+                        <td>${isBuy ? tx.date : tx.sell_date}</td>
+                        <td><strong>${tx.ticker}</strong></td>
+                        <td>
+                            <span class="badge ${isBuy ? 'bg-success' : 'bg-danger'}">
+                                ${isBuy ? 'BUY' : 'SELL'}
+                            </span>
+                        </td>
+                        <td>${isBuy ? tx.quantity : tx.sell_quantity}</td>
+                        <td>$${isBuy ? parseFloat(tx.buy_price).toFixed(2) : parseFloat(tx.sell_price).toFixed(2)}</td>
+                        <td>$${isBuy ? parseFloat(tx.total).toFixed(2) : (tx.sell_quantity * tx.sell_price).toFixed(2)}</td>
+                        <td>${tx.reason}</td>
+                        <td>
+                            ${tx.gain_loss ? 
+                                `<span class="${parseFloat(tx.gain_loss) >= 0 ? 'text-success' : 'text-danger'}">
+                                    ${parseFloat(tx.gain_loss) >= 0 ? '+' : ''}$${parseFloat(tx.gain_loss).toFixed(2)}
+                                </span>` : 
+                                '-'
+                            }
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tableHtml += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            document.getElementById('transactionsContainer').innerHTML = tableHtml;
+        }
+
+        // Buy/Sell form handlers
+        document.getElementById('buyForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const ticker = document.getElementById('buyTicker').value.trim();
+            const quantity = parseInt(document.getElementById('buyQuantity').value);
+            const reason = document.getElementById('buyReason').value.trim();
+            const stopPrice = document.getElementById('buyStopPrice').value;
+            
+            try {
+                const response = await fetch('/api/portfolio/buy', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ticker,
+                        quantity,
+                        reason,
+                        stop_price: stopPrice || null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert(`✅ ${data.message}\nTotal Cost: $${data.total_cost.toFixed(2)}\nRemaining Cash: $${data.remaining_cash.toFixed(2)}`);
+                    document.getElementById('buyForm').reset();
+                    loadPortfolioSummary();
+                } else {
+                    alert(`❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        });
+
+        // Performance chart variables
+        let performanceChart = null;
+
+        async function loadPortfolioPerformance() {
+            const loading = document.getElementById('performanceLoading');
+            const chartContainer = document.getElementById('performanceChartContainer');
+            const summary = document.getElementById('performanceSummary');
+            
+            loading.style.display = 'block';
+            chartContainer.style.display = 'none';
+            summary.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/portfolio/performance');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayPerformanceChart(data.performance_data);
+                    displayPerformanceSummary(data.total_gain_loss, data.total_gain_loss_percent);
+                } else {
+                    loading.innerHTML = `<div class="alert alert-danger">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                loading.innerHTML = `<div class="alert alert-danger">Error loading performance: ${error.message}</div>`;
+            }
+        }
+
+        function displayPerformanceChart(performanceData) {
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            
+            // Destroy existing chart
+            if (performanceChart) {
+                performanceChart.destroy();
+            }
+            
+            const labels = performanceData.map(item => item.date);
+            const gainLossData = performanceData.map(item => item.gain_loss);
+            
+            // Determine overall trend for color
+            const latestValue = gainLossData[gainLossData.length - 1] || 0;
+            const isPositive = latestValue >= 0;
+            
+            performanceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Portfolio Gain/Loss ($)',
+                        data: gainLossData,
+                        borderColor: isPositive ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)',
+                        backgroundColor: isPositive ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                        tension: 0.1,
+                        fill: true,
+                        pointBackgroundColor: gainLossData.map(value => 
+                            value >= 0 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'
+                        ),
+                        pointBorderColor: gainLossData.map(value => 
+                            value >= 0 ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)'
+                        )
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Gain/Loss ($)'
+                            },
+                            grid: {
+                                color: function(context) {
+                                    return context.tick.value === 0 ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.1)';
+                                }
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true
+                        }
+                    }
+                }
+            });
+            
+            document.getElementById('performanceChartContainer').style.display = 'block';
+            document.getElementById('performanceLoading').style.display = 'none';
+        }
+
+        function displayPerformanceSummary(totalGainLoss, totalGainLossPercent) {
+            const gainLossElement = document.getElementById('totalGainLoss');
+            const percentElement = document.getElementById('totalGainLossPercent');
+            
+            // Format and color code the values
+            const gainLossFormatted = `$${totalGainLoss.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            const percentFormatted = `${totalGainLossPercent.toFixed(2)}%`;
+            
+            gainLossElement.textContent = gainLossFormatted;
+            percentElement.textContent = percentFormatted;
+            
+            // Color coding
+            const color = totalGainLoss >= 0 ? 'text-success' : 'text-danger';
+            gainLossElement.className = `mb-0 ${color}`;
+            percentElement.className = `mb-0 ${color}`;
+            
+            document.getElementById('performanceSummary').style.display = 'block';
+        }
+
+        async function refreshPortfolioData() {
+            const btn = document.getElementById('refreshDataBtn');
+            btn.disabled = true;
+            btn.innerHTML = '🔄 Refreshing...';
+            
+            try {
+                await loadPortfolioSummary();
+                await loadPortfolioPerformance();
+                btn.innerHTML = '✅ Refreshed';
+                setTimeout(() => {
+                    btn.innerHTML = '🔄 Refresh Data';
+                    btn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                btn.innerHTML = '❌ Error';
+                setTimeout(() => {
+                    btn.innerHTML = '🔄 Refresh Data';
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        async function refreshQuotes() {
+            const btn = document.getElementById('refreshQuotesBtn');
+            btn.disabled = true;
+            btn.innerHTML = '💰 Refreshing...';
+            
+            try {
+                const response = await fetch('/api/portfolio/refresh-quotes', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    btn.innerHTML = '✅ Cache Cleared';
+                    // Reload data with fresh quotes
+                    await loadPortfolioSummary();
+                    await loadPortfolioPerformance();
+                } else {
+                    btn.innerHTML = '❌ Error';
+                }
+                
+                setTimeout(() => {
+                    btn.innerHTML = '💰 Override Cache';
+                    btn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                btn.innerHTML = '❌ Error';
+                setTimeout(() => {
+                    btn.innerHTML = '💰 Override Cache';
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        document.getElementById('sellForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const ticker = document.getElementById('sellTicker').value.trim();
+            const quantity = parseInt(document.getElementById('sellQuantity').value);
+            const reason = document.getElementById('sellReason').value.trim();
+            
+            try {
+                const response = await fetch('/api/portfolio/sell', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ticker,
+                        quantity,
+                        reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const gainLossText = data.gain_loss >= 0 ? `Gain: +$${data.gain_loss.toFixed(2)}` : `Loss: $${data.gain_loss.toFixed(2)}`;
+                    alert(`✅ ${data.message}\nTotal Proceeds: $${data.total_proceeds.toFixed(2)}\n${gainLossText}\nRemaining Cash: $${data.remaining_cash.toFixed(2)}`);
+                    document.getElementById('sellForm').reset();
+                    // Refresh portfolio if on portfolio tab
+                    if (document.getElementById('portfolio-tab').classList.contains('active')) {
+                        loadPortfolioSummary();
+                    }
+                } else {
+                    alert(`❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+            }
+        });
+
+        // Function to sell a holding - switches to trade tab and pre-fills form
+        function sellHolding(ticker, maxQuantity) {
+            // Switch to the Buy/Sell tab
+            const tradeTab = new bootstrap.Tab(document.getElementById('trade-tab'));
+            tradeTab.show();
+            
+            // Pre-fill the sell form
+            document.getElementById('sellTicker').value = ticker;
+            document.getElementById('sellQuantity').value = maxQuantity;
+            document.getElementById('sellQuantity').max = maxQuantity;
+            document.getElementById('sellReason').value = '';
+            
+            // Focus on the quantity field so user can easily adjust
+            setTimeout(() => {
+                document.getElementById('sellQuantity').select();
+            }, 100);
+            
+            // Add a helper text showing max quantity
+            const quantityField = document.getElementById('sellQuantity');
+            const existingHelper = document.getElementById('sellQuantityHelper');
+            if (existingHelper) {
+                existingHelper.remove();
+            }
+            
+            const helperText = document.createElement('small');
+            helperText.id = 'sellQuantityHelper';
+            helperText.className = 'form-text text-muted';
+            helperText.textContent = `You own ${maxQuantity} shares of ${ticker}`;
+            quantityField.parentNode.appendChild(helperText);
+        }
+
+        // AI Predictor functions
+        let currentRecommendations = null;
+
+        async function getAIRecommendations() {
+            const btn = document.getElementById('getRecommendationsBtn');
+            const spinner = document.getElementById('aiLoadingSpinner');
+            const useOpenAIPrice = document.getElementById('useOpenAIPriceCheckbox').checked;
+            
+            btn.disabled = true;
+            spinner.classList.remove('d-none');
+            
+            try {
+                const response = await fetch('/api/ai/recommendations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        use_openai_price: useOpenAIPrice
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    currentRecommendations = data.recommendations;
+                    displayRecommendations(data.recommendations);
+                } else {
+                    document.getElementById('sellRecommendationsSection').style.display = 'block';
+                    document.getElementById('sellRecommendationsContainer').innerHTML = `
+                        <div class="alert alert-danger">
+                            <strong>Error:</strong> ${data.error || 'Failed to get AI recommendations'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('sellRecommendationsSection').style.display = 'block';
+                document.getElementById('sellRecommendationsContainer').innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>Error:</strong> ${error.message}
+                    </div>
+                `;
+            } finally {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+            }
+        }
+
+        function displayRecommendations(recommendations) {
+            // Display sell recommendations
+            if (recommendations.sell_decisions && recommendations.sell_decisions.length > 0) {
+                let sellHtml = '';
+                recommendations.sell_decisions.forEach((sell, index) => {
+                    const actionClass = sell.action === 'SELL' ? 'danger' : sell.action === 'TRIM' ? 'warning' : 'secondary';
+                    sellHtml += `
+                        <div class="form-check mb-3 p-3 border rounded">
+                            <input class="form-check-input" type="checkbox" id="sell_${index}" data-ticker="${sell.ticker}" data-action="${sell.action}">
+                            <label class="form-check-label w-100" for="sell_${index}">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong>${sell.ticker}</strong> 
+                                        <span class="badge bg-${actionClass}">${sell.action}</span>
+                                        <br>
+                                        <small class="text-muted">Current Price: $${sell.current_price?.toFixed(2) || 'N/A'}</small>
+                                        <br>
+                                        <em>${sell.reason}</em>
+                                    </div>
+                                    <div class="text-end">
+                                        <a href="https://finance.yahoo.com/quote/${sell.ticker}/" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            📊 Yahoo Finance
+                                        </a>
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                    `;
+                });
+                document.getElementById('sellRecommendationsContainer').innerHTML = sellHtml;
+                document.getElementById('sellRecommendationsSection').style.display = 'block';
+            }
+
+            // Display buy recommendations
+            if (recommendations.buy_recommendations && recommendations.buy_recommendations.length > 0) {
+                let buyHtml = '';
+                recommendations.buy_recommendations.forEach((buy, index) => {
+                    const totalCost = (buy.current_price || 0) * (buy.quantity || 0);
+                    const stopLossWarning = buy.stop_loss_corrected ? 
+                        '<span class="badge bg-warning text-dark ms-1">Stop Loss Corrected</span>' : '';
+                    
+                    buyHtml += `
+                        <div class="form-check mb-3 p-3 border rounded">
+                            <input class="form-check-input buy-checkbox" type="checkbox" id="buy_${index}" 
+                                   data-ticker="${buy.ticker}" data-cost="${totalCost.toFixed(2)}">
+                            <label class="form-check-label w-100" for="buy_${index}">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong>${buy.ticker}</strong>
+                                        <span class="badge bg-success">BUY ${buy.quantity} shares</span>
+                                        ${stopLossWarning}
+                                        <br>
+                                        <small class="text-muted">
+                                            Current Price: $${buy.current_price?.toFixed(2) || 'N/A'} | 
+                                            AI Quantity: ${buy.quantity} shares |
+                                            Total Cost: $${totalCost.toFixed(2)} | 
+                                            AI Stop Loss: $${buy.stop_loss_price?.toFixed(2) || 'N/A'}
+                                        </small>
+                                        <br>
+                                        <em>${buy.reason}</em>
+                                    </div>
+                                    <div class="text-end">
+                                        <a href="https://finance.yahoo.com/quote/${buy.ticker}/" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            📊 Yahoo Finance
+                                        </a>
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                    `;
+                });
+                document.getElementById('buyRecommendationsContainer').innerHTML = buyHtml;
+                document.getElementById('buyRecommendationsSection').style.display = 'block';
+            }
+
+            // Show execute trades button and initialize cash tracking
+            document.getElementById('executeTradesSection').style.display = 'block';
+            
+            // Initialize cash tracking
+            initializeCashTracking(recommendations);
+        }
+        
+        async function initializeCashTracking(recommendations) {
+            // Get actual cash balance from portfolio API instead of OpenAI response
+            try {
+                const response = await fetch('/api/portfolio/summary');
+                const portfolioData = await response.json();
+                const actualCash = portfolioData.cash_balance || 10000;
+                
+                document.getElementById('currentCash').textContent = `$${actualCash.toLocaleString()}`;
+                document.getElementById('selectedCosts').textContent = '$0';
+                document.getElementById('remainingCash').textContent = `$${actualCash.toLocaleString()}`;
+                document.getElementById('cashTotalDisplay').style.display = 'block';
+                
+                console.log(`Using actual cash from portfolio: $${actualCash} (OpenAI suggested: $${recommendations.remaining_cash || 'N/A'})`);
+            } catch (error) {
+                console.error('Failed to get actual cash balance, using fallback:', error);
+                const fallbackCash = 10000;
+                document.getElementById('currentCash').textContent = `$${fallbackCash.toLocaleString()}`;
+                document.getElementById('selectedCosts').textContent = '$0';
+                document.getElementById('remainingCash').textContent = `$${fallbackCash.toLocaleString()}`;
+                document.getElementById('cashTotalDisplay').style.display = 'block';
+            }
+            
+            // Add event listeners to buy checkboxes
+            document.querySelectorAll('.buy-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', updateCashTotal);
+            });
+        }
+        
+        function updateCashTotal() {
+            const currentCash = parseFloat(document.getElementById('currentCash').textContent.replace(/[$,]/g, ''));
+            let totalSelectedCosts = 0;
+            
+            // Calculate total cost of selected buy recommendations
+            document.querySelectorAll('.buy-checkbox:checked').forEach(checkbox => {
+                const cost = parseFloat(checkbox.dataset.cost || 0);
+                totalSelectedCosts += cost;
+            });
+            
+            const remainingCash = currentCash - totalSelectedCosts;
+            
+            // Update display
+            document.getElementById('selectedCosts').textContent = `$${totalSelectedCosts.toLocaleString()}`;
+            document.getElementById('remainingCash').textContent = `$${remainingCash.toLocaleString()}`;
+            
+            // Color code remaining cash
+            const remainingCashElement = document.getElementById('remainingCash');
+            if (remainingCash < 0) {
+                remainingCashElement.style.color = 'red';
+                remainingCashElement.style.fontWeight = 'bold';
+            } else if (remainingCash < 500) {
+                remainingCashElement.style.color = 'orange';
+                remainingCashElement.style.fontWeight = 'bold';
+            } else {
+                remainingCashElement.style.color = 'green';
+                remainingCashElement.style.fontWeight = 'normal';
+            }
+        }
+
+        async function executeSelectedTrades() {
+            const btn = document.getElementById('executeTradesBtn');
+            const spinner = document.getElementById('executeLoadingSpinner');
+            
+            // Get selected trades
+            const selectedBuys = [];
+            const selectedSells = [];
+            
+            // Get selected buy recommendations
+            document.querySelectorAll('input[id^="buy_"]:checked').forEach(checkbox => {
+                const ticker = checkbox.dataset.ticker;
+                const buyRec = currentRecommendations.buy_recommendations.find(b => b.ticker === ticker);
+                if (buyRec) {
+                    selectedBuys.push(buyRec);
+                }
+            });
+            
+            // Get selected sell recommendations
+            document.querySelectorAll('input[id^="sell_"]:checked').forEach(checkbox => {
+                const ticker = checkbox.dataset.ticker;
+                const action = checkbox.dataset.action;
+                const sellRec = currentRecommendations.sell_decisions.find(s => s.ticker === ticker);
+                if (sellRec) {
+                    selectedSells.push(sellRec);
+                }
+            });
+            
+            if (selectedBuys.length === 0 && selectedSells.length === 0) {
+                alert('Please select at least one recommendation to execute.');
+                return;
+            }
+            
+            btn.disabled = true;
+            spinner.classList.remove('d-none');
+            
+            try {
+                const response = await fetch('/api/ai/execute-trades', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        selected_buys: selectedBuys,
+                        selected_sells: selectedSells
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayExecutionResults(data);
+                    // Refresh portfolio data after successful trades
+                    loadPortfolioSummary();
+                } else {
+                    document.getElementById('aiResultsContainer').innerHTML = 
+                        `<div class="alert alert-danger">Error: ${data.error || 'Failed to execute trades'}</div>`;
+                    document.getElementById('aiResultsSection').style.display = 'block';
+                }
+            } catch (error) {
+                document.getElementById('aiResultsContainer').innerHTML = 
+                    `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                document.getElementById('aiResultsSection').style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+            }
+        }
+
+        function displayExecutionResults(results) {
+            let resultsHtml = '';
+            
+            // Display buy results
+            if (results.buy_results && results.buy_results.length > 0) {
+                resultsHtml += '<h6 class="text-success">✅ Buy Orders Executed:</h6><ul>';
+                results.buy_results.forEach(result => {
+                    resultsHtml += `<li class="text-success">${result.message}</li>`;
+                });
+                resultsHtml += '</ul>';
+            }
+            
+            // Display sell results
+            if (results.sell_results && results.sell_results.length > 0) {
+                resultsHtml += '<h6 class="text-info">💰 Sell Orders Executed:</h6><ul>';
+                results.sell_results.forEach(result => {
+                    const gainLossText = result.gain_loss >= 0 ? `+$${result.gain_loss.toFixed(2)}` : `$${result.gain_loss.toFixed(2)}`;
+                    resultsHtml += `<li class="text-info">${result.message} (P&L: ${gainLossText})</li>`;
+                });
+                resultsHtml += '</ul>';
+            }
+            
+            // Display errors
+            if (results.errors && results.errors.length > 0) {
+                resultsHtml += '<h6 class="text-danger">❌ Errors:</h6><ul>';
+                results.errors.forEach(error => {
+                    resultsHtml += `<li class="text-danger">${error}</li>`;
+                });
+                resultsHtml += '</ul>';
+            }
+            
+            if (!resultsHtml) {
+                resultsHtml = '<div class="alert alert-info">No trades were executed.</div>';
+            }
+            
+            document.getElementById('aiResultsContainer').innerHTML = resultsHtml;
+            document.getElementById('aiResultsSection').style.display = 'block';
+        }
+
+        // Event listeners for AI predictor
+        document.getElementById('getRecommendationsBtn').addEventListener('click', getAIRecommendations);
+        document.getElementById('executeTradesBtn').addEventListener('click', executeSelectedTrades);
+
+        // Tab change handlers
+        document.getElementById('portfolio-tab').addEventListener('click', () => {
+            loadPortfolioSummary();
+            loadPortfolioPerformance();
+        });
+
+        document.getElementById('transactions-tab').addEventListener('click', () => {
+            loadTransactions();
+        });
+
+        // Load default portfolio on page load
+        window.addEventListener('load', () => {
+            loadPortfolioSummary();
+            loadPortfolioPerformance();
+        });
+    </script>
+</body>
+</html>
