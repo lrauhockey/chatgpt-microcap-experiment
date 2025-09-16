@@ -3,7 +3,7 @@ import json
 import os
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
-
+# 
 load_dotenv()
 
 class AIStockPredictorService:
@@ -146,9 +146,12 @@ class AIStockPredictorService:
                 print("=== VALIDATING WITH STOCK APIs ===")
                 validated_recommendations = self._validate_recommendations(recommendations, stock_service)
             
+            # Apply share reduction logic to ensure we don't exceed available cash
+            final_recommendations = self._apply_share_reduction_logic(validated_recommendations, cash_balance)
+            
             return {
                 'success': True,
-                'recommendations': validated_recommendations,
+                'recommendations': final_recommendations,
                 'raw_response': function_call.arguments if 'function_call' in locals() and function_call else ai_response,
                 'used_openai_price': use_openai_price
             }
@@ -363,3 +366,124 @@ Calculate share quantities based on current stock prices to stay within these do
                 print(f"Using OpenAI price for {ticker}: ${ai_price}")
         
         return validated
+    
+    def _apply_share_reduction_logic(self, recommendations: Dict, available_cash: float) -> Dict:
+        """Apply share reduction logic to ensure total buy value doesn't exceed available cash minus $500 buffer"""
+        
+        # Keep $500 minimum cash buffer
+        CASH_BUFFER = 500.0
+        max_investment = available_cash - CASH_BUFFER
+        
+        print(f"=== SHARE REDUCTION LOGIC ===")
+        print(f"Available Cash: ${available_cash:,.2f}")
+        print(f"Cash Buffer: ${CASH_BUFFER:,.2f}")
+        print(f"Max Investment: ${max_investment:,.2f}")
+        
+        buy_recommendations = recommendations.get('buy_recommendations', [])
+        
+        if not buy_recommendations:
+            print("No buy recommendations to process")
+            return recommendations
+        
+        # Calculate total cost of all buy recommendations
+        total_original_cost = 0
+        for buy_rec in buy_recommendations:
+            price = buy_rec.get('current_price', buy_rec.get('buy_price', 0))
+            quantity = buy_rec.get('quantity', 0)
+            cost = price * quantity
+            total_original_cost += cost
+            buy_rec['original_quantity'] = quantity
+            buy_rec['original_cost'] = cost
+            print(f"Original: {buy_rec['ticker']} - {quantity} shares @ ${price:.2f} = ${cost:,.2f}")
+        
+        print(f"Total Original Cost: ${total_original_cost:,.2f}")
+        
+        # If total cost is within budget, no reduction needed
+        if total_original_cost <= max_investment:
+            print("✅ Total cost is within budget - no reduction needed")
+            for buy_rec in buy_recommendations:
+                buy_rec['shares_reduced'] = False
+                buy_rec['reduction_reason'] = "No reduction needed - within budget"
+            return recommendations
+        
+        # Need to reduce shares - reduce each stock by 1 share iteratively until within budget
+        print(f"❌ Total cost ${total_original_cost:,.2f} exceeds max investment ${max_investment:,.2f}")
+        print("🔄 Starting share reduction process...")
+        
+        reduction_rounds = 0
+        while True:
+            # Calculate current total cost
+            current_total_cost = 0
+            for buy_rec in buy_recommendations:
+                price = buy_rec.get('current_price', buy_rec.get('buy_price', 0))
+                quantity = buy_rec.get('quantity', 0)
+                current_total_cost += price * quantity
+            
+            print(f"Round {reduction_rounds + 1}: Current total cost = ${current_total_cost:,.2f}")
+            
+            # If we're within budget, we're done
+            if current_total_cost <= max_investment:
+                print(f"✅ Achieved target! Final cost: ${current_total_cost:,.2f} (under ${max_investment:,.2f})")
+                break
+            
+            # Reduce each stock by 1 share (if they have shares left)
+            reductions_made = False
+            for buy_rec in buy_recommendations:
+                if buy_rec.get('quantity', 0) > 0:
+                    buy_rec['quantity'] -= 1
+                    reductions_made = True
+                    price = buy_rec.get('current_price', buy_rec.get('buy_price', 0))
+                    print(f"  Reduced {buy_rec['ticker']} by 1 share (now {buy_rec['quantity']} shares)")
+            
+            # If no reductions were made (all stocks at 0 shares), break to avoid infinite loop
+            if not reductions_made:
+                print("⚠️ All stocks reduced to 0 shares - stopping reduction")
+                break
+            
+            reduction_rounds += 1
+            
+            # Safety check to prevent infinite loops
+            if reduction_rounds > 1000:
+                print("⚠️ Too many reduction rounds - stopping for safety")
+                break
+        
+        # Calculate final costs and mark reductions
+        final_total_cost = 0
+        for buy_rec in buy_recommendations:
+            price = buy_rec.get('current_price', buy_rec.get('buy_price', 0))
+            final_quantity = buy_rec.get('quantity', 0)
+            original_quantity = buy_rec.get('original_quantity', 0)
+            final_cost = price * final_quantity
+            final_total_cost += final_cost
+            
+            shares_reduced = original_quantity - final_quantity
+            buy_rec['shares_reduced'] = shares_reduced > 0
+            buy_rec['shares_reduced_count'] = shares_reduced
+            buy_rec['final_cost'] = final_cost
+            
+            if shares_reduced > 0:
+                buy_rec['reduction_reason'] = f"Reduced by {shares_reduced} shares to stay within budget"
+                print(f"📉 {buy_rec['ticker']}: {original_quantity} → {final_quantity} shares (reduced by {shares_reduced})")
+                print(f"   Cost: ${buy_rec['original_cost']:,.2f} → ${final_cost:,.2f} (saved ${buy_rec['original_cost'] - final_cost:,.2f})")
+            else:
+                buy_rec['reduction_reason'] = "No reduction needed"
+        
+        # Remove any stocks that ended up with 0 shares
+        buy_recommendations = [rec for rec in buy_recommendations if rec.get('quantity', 0) > 0]
+        
+        print(f"=== FINAL RESULTS ===")
+        print(f"Original total cost: ${total_original_cost:,.2f}")
+        print(f"Final total cost: ${final_total_cost:,.2f}")
+        print(f"Total savings: ${total_original_cost - final_total_cost:,.2f}")
+        print(f"Remaining cash after trades: ${available_cash - final_total_cost:,.2f}")
+        print(f"Final recommendations: {len(buy_recommendations)} stocks")
+        
+        # Update the recommendations
+        recommendations['buy_recommendations'] = buy_recommendations
+        recommendations['share_reduction_applied'] = True
+        recommendations['original_total_cost'] = total_original_cost
+        recommendations['final_total_cost'] = final_total_cost
+        recommendations['total_savings'] = total_original_cost - final_total_cost
+        recommendations['reduction_rounds'] = reduction_rounds
+        
+        return recommendations

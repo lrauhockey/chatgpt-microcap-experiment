@@ -194,3 +194,4 @@ The modular architecture makes it easy to add:
 - Advanced portfolio analytics
 - Integration with brokers' APIs
 - Mobile app connectivity
+ 

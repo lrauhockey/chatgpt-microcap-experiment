@@ -10,7 +10,7 @@ from pyfinviz.quote import Quote
 import pandas as pd
 import csv
 
-# Load environment variables
+# Load environment variables.
 load_dotenv()
 
 app = Flask(__name__)
@@ -452,16 +452,22 @@ def buy_stock():
         quantity = int(data.get('quantity', 0))
         reason = data.get('reason', '').strip()
         stop_price = data.get('stop_price')
+        manual_price = data.get('price')  # Manual price from frontend
         
         if not ticker or quantity <= 0:
             return jsonify({'error': 'Invalid ticker or quantity'}), 400
         
-        # Get current stock price
-        quote = stock_service.get_stock_quote(ticker)
-        if not quote:
-            return jsonify({'error': f'Could not get quote for {ticker}'}), 404
-        
-        current_price = quote['current_price']
+        # Use manual price if provided, otherwise get current market price
+        if manual_price is not None:
+            current_price = float(manual_price)
+            if current_price <= 0:
+                return jsonify({'error': 'Invalid price'}), 400
+        else:
+            # Get current stock price from API
+            quote = stock_service.get_stock_quote(ticker)
+            if not quote:
+                return jsonify({'error': f'Could not get quote for {ticker}'}), 404
+            current_price = quote['current_price']
         
         # Execute buy transaction
         result = portfolio_service.buy_stock(
@@ -803,6 +809,194 @@ def execute_ai_trades():
         
     except Exception as e:
         return jsonify({'error': f'Failed to execute trades: {str(e)}'}), 500
+
+@app.route('/api/ai/auto-execute-trades', methods=['POST'])
+def auto_execute_ai_trades():
+    """API endpoint to automatically execute AI trade recommendations with cash validation"""
+    try:
+        print(f"=== AUTO EXECUTE AI TRADES ===")
+        
+        # Get AI recommendations first
+        from ai_predictor_service import AIStockPredictorService
+        from portfolio_service import PortfolioService
+        
+        # Initialize services
+        ai_service = AIStockPredictorService()
+        portfolio_service_local = PortfolioService()
+        
+        # Get request data
+        request_data = request.get_json() or {}
+        use_openai_price = request_data.get('use_openai_price', False)
+        
+        print(f"Use OpenAI Price: {use_openai_price}")
+        
+        # Get AI recommendations with share reduction logic applied
+        result = ai_service.get_stock_recommendations(
+            portfolio_service_local, 
+            stock_service if not use_openai_price else None, 
+            use_openai_price
+        )
+        
+        if not result.get('success'):
+            return jsonify({
+                'success': False,
+                'error': f"Failed to get AI recommendations: {result.get('error', 'Unknown error')}"
+            }), 500
+        
+        recommendations = result['recommendations']
+        buy_recommendations = recommendations.get('buy_recommendations', [])
+        sell_decisions = recommendations.get('sell_decisions', [])
+        
+        print(f"Got {len(buy_recommendations)} buy recommendations and {len(sell_decisions)} sell decisions")
+        
+        # Validate cash requirements one more time before execution
+        current_cash = portfolio_service_local.get_cash_balance()
+        total_buy_cost = sum(
+            rec.get('current_price', rec.get('buy_price', 0)) * rec.get('quantity', 0) 
+            for rec in buy_recommendations
+        )
+        
+        print(f"Current Cash: ${current_cash:,.2f}")
+        print(f"Total Buy Cost: ${total_buy_cost:,.2f}")
+        print(f"Remaining after trades: ${current_cash - total_buy_cost:,.2f}")
+        
+        if total_buy_cost > current_cash - 500:
+            return jsonify({
+                'success': False,
+                'error': f'Insufficient funds for auto-execution. Need ${total_buy_cost:,.2f}, have ${current_cash:,.2f} (keeping $500 buffer)',
+                'current_cash': current_cash,
+                'total_buy_cost': total_buy_cost,
+                'recommendations': recommendations
+            }), 400
+        
+        # Execute trades automatically
+        execution_results = {
+            'buy_results': [],
+            'sell_results': [],
+            'errors': [],
+            'recommendations_used': recommendations,
+            'auto_executed': True
+        }
+        
+        # Execute sell orders first
+        for sell_data in sell_decisions:
+            try:
+                ticker = sell_data['ticker']
+                action = sell_data['action']
+                
+                if action == 'SELL':
+                    holdings = portfolio_service_local.get_holdings()
+                    holding = next((h for h in holdings if h['ticker'] == ticker), None)
+                    
+                    if holding:
+                        if use_openai_price:
+                            # Use a reasonable price for selling (we don't have current price)
+                            current_price = 50.0  # Default price for test
+                        else:
+                            quote = stock_service.get_stock_quote(ticker)
+                            if not quote:
+                                execution_results['errors'].append(f"Could not get quote for {ticker}")
+                                continue
+                            current_price = quote['current_price']
+                        
+                        result = portfolio_service_local.sell_stock(
+                            ticker=ticker,
+                            quantity=int(holding['quantity']),
+                            price=current_price,
+                            reason=f"Auto AI Recommendation: {sell_data.get('reason', 'AI suggested sell')}"
+                        )
+                        execution_results['sell_results'].append(result)
+                        print(f"✅ Auto-sold {holding['quantity']} shares of {ticker} at ${current_price}")
+                    else:
+                        execution_results['errors'].append(f"No holding found for {ticker}")
+                        
+                elif action == 'TRIM':
+                    holdings = portfolio_service_local.get_holdings()
+                    holding = next((h for h in holdings if h['ticker'] == ticker), None)
+                    
+                    if holding:
+                        if use_openai_price:
+                            current_price = 50.0  # Default price for test
+                        else:
+                            quote = stock_service.get_stock_quote(ticker)
+                            if not quote:
+                                execution_results['errors'].append(f"Could not get quote for {ticker}")
+                                continue
+                            current_price = quote['current_price']
+                        
+                        trim_quantity = max(1, int(holding['quantity'] // 2))
+                        result = portfolio_service_local.sell_stock(
+                            ticker=ticker,
+                            quantity=trim_quantity,
+                            price=current_price,
+                            reason=f"Auto AI Recommendation: {sell_data.get('reason', 'AI suggested trim')}"
+                        )
+                        execution_results['sell_results'].append(result)
+                        print(f"✅ Auto-trimmed {trim_quantity} shares of {ticker} at ${current_price}")
+                    else:
+                        execution_results['errors'].append(f"No holding found for {ticker}")
+                        
+            except Exception as e:
+                error_msg = f"Error auto-selling {sell_data.get('ticker', 'unknown')}: {str(e)}"
+                execution_results['errors'].append(error_msg)
+                print(f"❌ {error_msg}")
+        
+        # Execute buy orders
+        for buy_data in buy_recommendations:
+            try:
+                ticker = buy_data['ticker']
+                quantity = int(buy_data['quantity'])
+                stop_price = buy_data.get('stop_loss_price')
+                
+                print(f"=== AUTO EXECUTING BUY ORDER ===")
+                print(f"Ticker: {ticker}")
+                print(f"Quantity: {quantity}")
+                print(f"Stop Price: {stop_price}")
+                
+                if use_openai_price:
+                    # Use the AI-provided price
+                    current_price = buy_data.get('current_price', buy_data.get('buy_price', 50.0))
+                    print(f"Using OpenAI Price: ${current_price}")
+                else:
+                    # Get current market price
+                    quote = stock_service.get_stock_quote(ticker)
+                    if not quote:
+                        execution_results['errors'].append(f"Could not get quote for {ticker}")
+                        continue
+                    current_price = quote['current_price']
+                    print(f"Using Market Price: ${current_price}")
+                
+                total_cost = current_price * quantity
+                print(f"Total Cost: ${current_price} x {quantity} = ${total_cost}")
+                
+                result = portfolio_service_local.buy_stock(
+                    ticker=ticker,
+                    quantity=quantity,
+                    price=current_price,
+                    reason=f"Auto AI Recommendation: {buy_data.get('reason', 'AI suggested buy')}",
+                    stop_price=stop_price
+                )
+                execution_results['buy_results'].append(result)
+                print(f"✅ Auto-bought {quantity} shares of {ticker} at ${current_price}")
+                
+            except Exception as e:
+                error_msg = f"Error auto-buying {buy_data.get('ticker', 'unknown')}: {str(e)}"
+                execution_results['errors'].append(error_msg)
+                print(f"❌ {error_msg}")
+        
+        # Final summary
+        print(f"=== AUTO EXECUTION COMPLETE ===")
+        print(f"Successful buys: {len(execution_results['buy_results'])}")
+        print(f"Successful sells: {len(execution_results['sell_results'])}")
+        print(f"Errors: {len(execution_results['errors'])}")
+        
+        return jsonify(execution_results)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Failed to auto-execute trades: {str(e)}'
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5007)

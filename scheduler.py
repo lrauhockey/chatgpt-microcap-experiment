@@ -4,6 +4,7 @@ Automated Trading Scheduler
 Runs scheduled tasks for portfolio management:
 - 9:30 AM weekdays: AI predictor with automatic buy/sell execution
 - 10:00 AM, 12:00 PM, 2:00 PM, 3:30 PM: Stop-loss monitoring
+
 """
 
 import schedule

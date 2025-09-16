@@ -6,4 +6,4 @@ alpha-vantage
 pyfinviz
 pandas==2.2.3
 openai==1.57.0
-schedule==1.1.0
+schedule==1.1.0 
