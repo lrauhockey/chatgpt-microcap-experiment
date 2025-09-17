@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -160,11 +160,32 @@
                                 <form id="buyForm">
                                     <div class="mb-3">
                                         <label for="buyTicker" class="form-label">Stock Symbol</label>
-                                        <input type="text" class="form-control" id="buyTicker" placeholder="e.g., AAPL" required>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="buyTicker" placeholder="e.g., AAPL" required>
+                                            <button type="button" class="btn btn-outline-primary" id="lookupPriceBtn">
+                                                📊 Lookup Price
+                                            </button>
+                                        </div>
                                     </div>
                                     <div class="mb-3">
                                         <label for="buyQuantity" class="form-label">Quantity</label>
                                         <input type="number" class="form-control" id="buyQuantity" min="1" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="buyPrice" class="form-label">Purchase Price ($)</label>
+                                        <input type="number" class="form-control" id="buyPrice" step="0.01" min="0.01" placeholder="Enter price per share" required>
+                                        <div class="form-text">Current market price will be fetched automatically</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Total Cost</label>
+                                        <div class="input-group">
+                                            <span class="input-group-text">$</span>
+                                            <input type="text" class="form-control" id="totalCost" readonly>
+                                            <span class="input-group-text" id="cashValidation">💰</span>
+                                        </div>
+                                        <div class="form-text">
+                                            Available Cash: $<span id="availableCash">0.00</span>
+                                        </div>
                                     </div>
                                     <div class="mb-3">
                                         <label for="buyReason" class="form-label">Reason</label>
@@ -174,7 +195,7 @@
                                         <label for="buyStopPrice" class="form-label">Stop Price (Optional)</label>
                                         <input type="number" class="form-control" id="buyStopPrice" step="0.01" placeholder="Stop loss price">
                                     </div>
-                                    <button type="submit" class="btn btn-success w-100">Buy Stock</button>
+                                    <button type="submit" class="btn btn-success w-100" id="buySubmitBtn">Buy Stock</button>
                                 </form>
                             </div>
                         </div>
@@ -720,14 +741,114 @@
             document.getElementById('transactionsContainer').innerHTML = tableHtml;
         }
 
+        // Buy form price lookup and calculation functions
+        let availableCash = 0;
+
+        async function lookupStockPrice() {
+            const ticker = document.getElementById('buyTicker').value.trim().toUpperCase();
+            if (!ticker) {
+                alert('Please enter a stock symbol first');
+                return;
+            }
+
+            const lookupBtn = document.getElementById('lookupPriceBtn');
+            lookupBtn.disabled = true;
+            lookupBtn.innerHTML = '⏳ Loading...';
+
+            try {
+                const response = await fetch(`/api/quote/${ticker}`);
+                const data = await response.json();
+                
+                if (response.ok && data.price) {
+                    document.getElementById('buyPrice').value = data.price.toFixed(2);
+                    calculateTotalCost();
+                    lookupBtn.innerHTML = '✅ Updated';
+                    setTimeout(() => {
+                        lookupBtn.innerHTML = '📊 Lookup Price';
+                        lookupBtn.disabled = false;
+                    }, 2000);
+                } else {
+                    alert(`❌ Could not fetch price for ${ticker}`);
+                    lookupBtn.innerHTML = '❌ Failed';
+                    setTimeout(() => {
+                        lookupBtn.innerHTML = '📊 Lookup Price';
+                        lookupBtn.disabled = false;
+                    }, 2000);
+                }
+            } catch (error) {
+                alert(`❌ Error fetching price: ${error.message}`);
+                lookupBtn.innerHTML = '❌ Error';
+                setTimeout(() => {
+                    lookupBtn.innerHTML = '📊 Lookup Price';
+                    lookupBtn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        function calculateTotalCost() {
+            const quantity = parseFloat(document.getElementById('buyQuantity').value) || 0;
+            const price = parseFloat(document.getElementById('buyPrice').value) || 0;
+            const totalCost = quantity * price;
+            
+            document.getElementById('totalCost').value = totalCost.toFixed(2);
+            
+            // Update cash validation
+            const cashValidation = document.getElementById('cashValidation');
+            const buySubmitBtn = document.getElementById('buySubmitBtn');
+            
+            if (totalCost > availableCash) {
+                cashValidation.innerHTML = '❌';
+                cashValidation.className = 'input-group-text text-danger';
+                buySubmitBtn.disabled = true;
+                buySubmitBtn.innerHTML = 'Insufficient Cash';
+            } else if (totalCost > 0) {
+                cashValidation.innerHTML = '✅';
+                cashValidation.className = 'input-group-text text-success';
+                buySubmitBtn.disabled = false;
+                buySubmitBtn.innerHTML = 'Buy Stock';
+            } else {
+                cashValidation.innerHTML = '💰';
+                cashValidation.className = 'input-group-text';
+                buySubmitBtn.disabled = false;
+                buySubmitBtn.innerHTML = 'Buy Stock';
+            }
+        }
+
+        async function loadAvailableCash() {
+            try {
+                const response = await fetch('/api/portfolio/cash');
+                const data = await response.json();
+                if (response.ok) {
+                    availableCash = data.cash_balance;
+                    document.getElementById('availableCash').textContent = availableCash.toFixed(2);
+                    calculateTotalCost(); // Recalculate validation
+                }
+            } catch (error) {
+                console.error('Error loading cash balance:', error);
+            }
+        }
+
         // Buy/Sell form handlers
         document.getElementById('buyForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const ticker = document.getElementById('buyTicker').value.trim();
             const quantity = parseInt(document.getElementById('buyQuantity').value);
+            const price = parseFloat(document.getElementById('buyPrice').value);
             const reason = document.getElementById('buyReason').value.trim();
             const stopPrice = document.getElementById('buyStopPrice').value;
+            
+            // Validate inputs
+            if (!ticker || !quantity || !price || !reason) {
+                alert('Please fill in all required fields');
+                return;
+            }
+
+            const totalCost = quantity * price;
+            if (totalCost > availableCash) {
+                alert(`Insufficient cash. Total cost: $${totalCost.toFixed(2)}, Available: $${availableCash.toFixed(2)}`);
+                return;
+            }
             
             try {
                 const response = await fetch('/api/portfolio/buy', {
@@ -738,6 +859,7 @@
                     body: JSON.stringify({
                         ticker,
                         quantity,
+                        price: price, // Send the manual price
                         reason,
                         stop_price: stopPrice || null
                     })
@@ -749,6 +871,7 @@
                     alert(`✅ ${data.message}\nTotal Cost: $${data.total_cost.toFixed(2)}\nRemaining Cash: $${data.remaining_cash.toFixed(2)}`);
                     document.getElementById('buyForm').reset();
                     loadPortfolioSummary();
+                    loadAvailableCash(); // Refresh cash balance
                 } else {
                     alert(`❌ Error: ${data.error}`);
                 }
@@ -756,6 +879,11 @@
                 alert(`❌ Error: ${error.message}`);
             }
         });
+
+        // Event listeners for buy form
+        document.getElementById('lookupPriceBtn').addEventListener('click', lookupStockPrice);
+        document.getElementById('buyQuantity').addEventListener('input', calculateTotalCost);
+        document.getElementById('buyPrice').addEventListener('input', calculateTotalCost);
 
         // Performance chart variables
         let performanceChart = null;
@@ -1053,31 +1181,67 @@
                 let sellHtml = '';
                 recommendations.sell_decisions.forEach((sell, index) => {
                     const actionClass = sell.action === 'SELL' ? 'danger' : sell.action === 'TRIM' ? 'warning' : 'secondary';
+                    const totalValue = (sell.current_price || 0) * (sell.quantity || 0);
+                    
                     sellHtml += `
-                        <div class="form-check mb-3 p-3 border rounded">
-                            <input class="form-check-input" type="checkbox" id="sell_${index}" data-ticker="${sell.ticker}" data-action="${sell.action}">
-                            <label class="form-check-label w-100" for="sell_${index}">
-                                <div class="d-flex justify-content-between align-items-start">
-                                    <div>
-                                        <strong>${sell.ticker}</strong> 
-                                        <span class="badge bg-${actionClass}">${sell.action}</span>
-                                        <br>
-                                        <small class="text-muted">Current Price: $${sell.current_price?.toFixed(2) || 'N/A'}</small>
-                                        <br>
-                                        <em>${sell.reason}</em>
+                        <div class="form-check mb-3 p-3 border rounded ai-sell-recommendation" data-index="${index}">
+                            <div class="d-flex align-items-start mb-2">
+                                <input class="form-check-input sell-checkbox me-2" type="checkbox" id="sell_${index}" 
+                                       data-ticker="${sell.ticker}" data-action="${sell.action}" data-index="${index}">
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div>
+                                            <strong>${sell.ticker}</strong> 
+                                            <span class="badge bg-${actionClass}">${sell.action}</span>
+                                        </div>
+                                        <div class="text-end">
+                                            <a href="https://finance.yahoo.com/quote/${sell.ticker}/" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                📊 Yahoo Finance
+                                            </a>
+                                        </div>
                                     </div>
-                                    <div class="text-end">
-                                        <a href="https://finance.yahoo.com/quote/${sell.ticker}/" target="_blank" class="btn btn-sm btn-outline-primary">
-                                            📊 Yahoo Finance
-                                        </a>
+                                    
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Quantity</label>
+                                            <input type="number" class="form-control form-control-sm ai-sell-quantity" 
+                                                   value="${sell.quantity}" min="1" data-index="${index}">
+                                            <small class="text-muted">AI suggested: ${sell.quantity}</small>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Price ($)</label>
+                                            <input type="number" class="form-control form-control-sm ai-sell-price" 
+                                                   value="${(sell.current_price || 0).toFixed(2)}" step="0.01" min="0.01" data-index="${index}">
+                                            <small class="text-muted">Current: $${(sell.current_price || 0).toFixed(2)}</small>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Total Value</label>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text">$</span>
+                                                <input type="text" class="form-control ai-sell-total-value" readonly 
+                                                       value="${totalValue.toFixed(2)}" data-index="${index}">
+                                                <span class="input-group-text">💰</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-md-12">
+                                            <label class="form-label small">Reason</label>
+                                            <input type="text" class="form-control form-control-sm ai-sell-reason" 
+                                                   value="${sell.reason}" data-index="${index}">
+                                        </div>
                                     </div>
                                 </div>
-                            </label>
+                            </div>
                         </div>
                     `;
                 });
                 document.getElementById('sellRecommendationsContainer').innerHTML = sellHtml;
                 document.getElementById('sellRecommendationsSection').style.display = 'block';
+                
+                // Add event listeners for sell recommendations
+                addAISellRecommendationListeners();
             }
 
             // Display buy recommendations
@@ -1089,37 +1253,71 @@
                         '<span class="badge bg-warning text-dark ms-1">Stop Loss Corrected</span>' : '';
                     
                     buyHtml += `
-                        <div class="form-check mb-3 p-3 border rounded">
-                            <input class="form-check-input buy-checkbox" type="checkbox" id="buy_${index}" 
-                                   data-ticker="${buy.ticker}" data-cost="${totalCost.toFixed(2)}">
-                            <label class="form-check-label w-100" for="buy_${index}">
-                                <div class="d-flex justify-content-between align-items-start">
-                                    <div>
-                                        <strong>${buy.ticker}</strong>
-                                        <span class="badge bg-success">BUY ${buy.quantity} shares</span>
-                                        ${stopLossWarning}
-                                        <br>
-                                        <small class="text-muted">
-                                            Current Price: $${buy.current_price?.toFixed(2) || 'N/A'} | 
-                                            AI Quantity: ${buy.quantity} shares |
-                                            Total Cost: $${totalCost.toFixed(2)} | 
-                                            AI Stop Loss: $${buy.stop_loss_price?.toFixed(2) || 'N/A'}
-                                        </small>
-                                        <br>
-                                        <em>${buy.reason}</em>
+                        <div class="form-check mb-3 p-3 border rounded ai-recommendation" data-index="${index}">
+                            <div class="d-flex align-items-start mb-2">
+                                <input class="form-check-input buy-checkbox me-2" type="checkbox" id="buy_${index}" 
+                                       data-ticker="${buy.ticker}" data-index="${index}">
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div>
+                                            <strong>${buy.ticker}</strong>
+                                            <span class="badge bg-success">BUY</span>
+                                            ${stopLossWarning}
+                                        </div>
+                                        <div class="text-end">
+                                            <a href="https://finance.yahoo.com/quote/${buy.ticker}/" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                📊 Yahoo Finance
+                                            </a>
+                                        </div>
                                     </div>
-                                    <div class="text-end">
-                                        <a href="https://finance.yahoo.com/quote/${buy.ticker}/" target="_blank" class="btn btn-sm btn-outline-primary">
-                                            📊 Yahoo Finance
-                                        </a>
+                                    
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Quantity</label>
+                                            <input type="number" class="form-control form-control-sm ai-quantity" 
+                                                   value="${buy.quantity}" min="1" data-index="${index}">
+                                            <small class="text-muted">AI suggested: ${buy.quantity}</small>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Price ($)</label>
+                                            <input type="number" class="form-control form-control-sm ai-price" 
+                                                   value="${(buy.current_price || 0).toFixed(2)}" step="0.01" min="0.01" data-index="${index}">
+                                            <small class="text-muted">Current: $${(buy.current_price || 0).toFixed(2)}</small>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small">Total Cost</label>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text">$</span>
+                                                <input type="text" class="form-control ai-total-cost" readonly 
+                                                       value="${totalCost.toFixed(2)}" data-index="${index}">
+                                                <span class="input-group-text ai-cash-validation" data-index="${index}">💰</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Stop Loss ($)</label>
+                                            <input type="number" class="form-control form-control-sm ai-stop-loss" 
+                                                   value="${buy.stop_loss_price?.toFixed(2) || ''}" step="0.01" data-index="${index}">
+                                            <small class="text-muted">AI suggested: $${buy.stop_loss_price?.toFixed(2) || 'N/A'}</small>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">Reason</label>
+                                            <input type="text" class="form-control form-control-sm ai-reason" 
+                                                   value="${buy.reason}" data-index="${index}">
+                                        </div>
                                     </div>
                                 </div>
-                            </label>
+                            </div>
                         </div>
                     `;
                 });
                 document.getElementById('buyRecommendationsContainer').innerHTML = buyHtml;
                 document.getElementById('buyRecommendationsSection').style.display = 'block';
+                
+                // Add event listeners for real-time calculations
+                addAIRecommendationListeners();
             }
 
             // Show execute trades button and initialize cash tracking
@@ -1187,6 +1385,95 @@
             }
         }
 
+        // AI Recommendation real-time calculation functions
+        function addAIRecommendationListeners() {
+            // Add event listeners for buy recommendations
+            document.querySelectorAll('.ai-quantity').forEach(input => {
+                input.addEventListener('input', (e) => calculateAITotalCost(e.target.dataset.index));
+            });
+            
+            document.querySelectorAll('.ai-price').forEach(input => {
+                input.addEventListener('input', (e) => calculateAITotalCost(e.target.dataset.index));
+            });
+            
+            // Initial calculation for all recommendations
+            document.querySelectorAll('.ai-quantity').forEach(input => {
+                calculateAITotalCost(input.dataset.index);
+            });
+        }
+
+        function addAISellRecommendationListeners() {
+            // Add event listeners for sell recommendations
+            document.querySelectorAll('.ai-sell-quantity').forEach(input => {
+                input.addEventListener('input', (e) => calculateAISellTotalValue(e.target.dataset.index));
+            });
+            
+            document.querySelectorAll('.ai-sell-price').forEach(input => {
+                input.addEventListener('input', (e) => calculateAISellTotalValue(e.target.dataset.index));
+            });
+            
+            // Initial calculation for all sell recommendations
+            document.querySelectorAll('.ai-sell-quantity').forEach(input => {
+                calculateAISellTotalValue(input.dataset.index);
+            });
+        }
+
+        function calculateAITotalCost(index) {
+            const quantityInput = document.querySelector(`.ai-quantity[data-index="${index}"]`);
+            const priceInput = document.querySelector(`.ai-price[data-index="${index}"]`);
+            const totalCostInput = document.querySelector(`.ai-total-cost[data-index="${index}"]`);
+            const cashValidation = document.querySelector(`.ai-cash-validation[data-index="${index}"]`);
+            const checkbox = document.querySelector(`#buy_${index}`);
+            
+            if (!quantityInput || !priceInput || !totalCostInput) return;
+            
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const price = parseFloat(priceInput.value) || 0;
+            const totalCost = quantity * price;
+            
+            totalCostInput.value = totalCost.toFixed(2);
+            
+            // Update checkbox data-cost for cash tracking
+            if (checkbox) {
+                checkbox.dataset.cost = totalCost.toFixed(2);
+            }
+            
+            // Get current available cash
+            const currentCashText = document.getElementById('currentCash')?.textContent || '$0';
+            const availableCash = parseFloat(currentCashText.replace(/[$,]/g, ''));
+            
+            // Update cash validation indicator
+            if (totalCost > availableCash) {
+                cashValidation.innerHTML = '❌';
+                cashValidation.className = 'input-group-text text-danger';
+            } else if (totalCost > 0) {
+                cashValidation.innerHTML = '✅';
+                cashValidation.className = 'input-group-text text-success';
+            } else {
+                cashValidation.innerHTML = '💰';
+                cashValidation.className = 'input-group-text';
+            }
+            
+            // Update overall cash total if checkbox is checked
+            if (checkbox && checkbox.checked) {
+                updateCashTotal();
+            }
+        }
+
+        function calculateAISellTotalValue(index) {
+            const quantityInput = document.querySelector(`.ai-sell-quantity[data-index="${index}"]`);
+            const priceInput = document.querySelector(`.ai-sell-price[data-index="${index}"]`);
+            const totalValueInput = document.querySelector(`.ai-sell-total-value[data-index="${index}"]`);
+            
+            if (!quantityInput || !priceInput || !totalValueInput) return;
+            
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const price = parseFloat(priceInput.value) || 0;
+            const totalValue = quantity * price;
+            
+            totalValueInput.value = totalValue.toFixed(2);
+        }
+
         async function executeSelectedTrades() {
             const btn = document.getElementById('executeTradesBtn');
             const spinner = document.getElementById('executeLoadingSpinner');
@@ -1195,23 +1482,44 @@
             const selectedBuys = [];
             const selectedSells = [];
             
-            // Get selected buy recommendations
+            // Get selected buy recommendations with edited values
             document.querySelectorAll('input[id^="buy_"]:checked').forEach(checkbox => {
+                const index = checkbox.dataset.index;
                 const ticker = checkbox.dataset.ticker;
-                const buyRec = currentRecommendations.buy_recommendations.find(b => b.ticker === ticker);
-                if (buyRec) {
-                    selectedBuys.push(buyRec);
-                }
+                
+                // Get edited values from the form
+                const quantity = parseInt(document.querySelector(`.ai-quantity[data-index="${index}"]`).value);
+                const price = parseFloat(document.querySelector(`.ai-price[data-index="${index}"]`).value);
+                const stopLoss = parseFloat(document.querySelector(`.ai-stop-loss[data-index="${index}"]`).value) || null;
+                const reason = document.querySelector(`.ai-reason[data-index="${index}"]`).value;
+                
+                selectedBuys.push({
+                    ticker: ticker,
+                    quantity: quantity,
+                    current_price: price,
+                    stop_loss_price: stopLoss,
+                    reason: reason
+                });
             });
             
-            // Get selected sell recommendations
+            // Get selected sell recommendations with edited values
             document.querySelectorAll('input[id^="sell_"]:checked').forEach(checkbox => {
+                const index = checkbox.dataset.index;
                 const ticker = checkbox.dataset.ticker;
                 const action = checkbox.dataset.action;
-                const sellRec = currentRecommendations.sell_decisions.find(s => s.ticker === ticker);
-                if (sellRec) {
-                    selectedSells.push(sellRec);
-                }
+                
+                // Get edited values from the form
+                const quantity = parseInt(document.querySelector(`.ai-sell-quantity[data-index="${index}"]`).value);
+                const price = parseFloat(document.querySelector(`.ai-sell-price[data-index="${index}"]`).value);
+                const reason = document.querySelector(`.ai-sell-reason[data-index="${index}"]`).value;
+                
+                selectedSells.push({
+                    ticker: ticker,
+                    quantity: quantity,
+                    current_price: price,
+                    action: action,
+                    reason: reason
+                });
             });
             
             if (selectedBuys.length === 0 && selectedSells.length === 0) {
@@ -1304,6 +1612,10 @@
             loadPortfolioPerformance();
         });
 
+        document.getElementById('trade-tab').addEventListener('click', () => {
+            loadAvailableCash();
+        });
+
         document.getElementById('transactions-tab').addEventListener('click', () => {
             loadTransactions();
         });
@@ -1312,6 +1624,7 @@
         window.addEventListener('load', () => {
             loadPortfolioSummary();
             loadPortfolioPerformance();
+            loadAvailableCash();
         });
     </script>
 </body>
