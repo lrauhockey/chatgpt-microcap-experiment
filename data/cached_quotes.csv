@@ -1,5 +1,2 @@
 ticker,current_price,timestamp,api_source
-ENPH,39.02,2025-09-16T11:56:22.862997,pyfinviz
-AI,17.14,2025-09-16T11:22:54.985986,pyfinviz
-MDT,94.49,2025-09-16T12:00:24.905421,pyfinviz
-SOLR,30.05,2025-09-16T12:00:29.961865,pyfinviz
+
