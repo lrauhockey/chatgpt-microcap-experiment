@@ -50,9 +50,11 @@ class AIStockPredictorService:
                                 "properties": {
                                     "ticker": {"type": "string"},
                                     "action": {"type": "string", "enum": ["SELL", "HOLD", "TRIM"]},
+                                    "quantity": {"type": "integer"},
+                                    "current_price": {"type": "number"},
                                     "reason": {"type": "string"}
                                 },
-                                "required": ["ticker", "action", "reason"]
+                                "required": ["ticker", "action", "quantity", "current_price", "reason"]
                             }
                         },
                         "buy_recommendations": {
@@ -173,13 +175,19 @@ class AIStockPredictorService:
     def _build_prompt(self, holdings: List[Dict], cash_balance: float, total_capital: float) -> str:
         """Build the prompt for OpenAI based on current portfolio"""
         
-        # Format current holdings
+        # Format current holdings with detailed analysis requirements
         holdings_text = ""
         if holdings:
             for holding in holdings:
                 # Calculate average purchase price from holdings data
                 avg_cost = holding['average_cost']
-                holdings_text += f"  - Ticker: {holding['ticker']} | Shares: {int(holding['quantity'])} | Purchase Price: ${avg_cost:.2f}\n"
+                quantity = int(holding['quantity'])
+                market_value = holding['total_market_value']
+                current_price = market_value / quantity if quantity > 0 else 0
+                gain_loss = market_value - (quantity * avg_cost)
+                gain_loss_pct = (gain_loss / (quantity * avg_cost)) * 100 if quantity * avg_cost > 0 else 0
+                
+                holdings_text += f"  - {holding['ticker']}: {quantity} shares @ ${avg_cost:.2f} avg cost | Current: ${current_price:.2f} | P&L: ${gain_loss:+.2f} ({gain_loss_pct:+.1f}%)\n"
         else:
             holdings_text = "  - No current holdings\n"
         
@@ -193,8 +201,22 @@ Target stocks in the $15-50 price range for good position sizing.
 """
         else:
             strategy_context = f"""
-Current portfolio has {len(holdings)} positions. Analyze each for SELL/HOLD/TRIM decisions.
-Only recommend new buys if you have strong conviction and sufficient cash remains.
+CRITICAL: Current portfolio has {len(holdings)} positions. You MUST analyze EACH holding for sell decisions:
+
+SELL DECISION REQUIREMENTS:
+- For EACH current holding, you MUST provide a sell_decision with:
+  * ticker: The stock symbol
+  * action: "SELL" (sell all shares), "TRIM" (sell partial), or "HOLD" (keep all)
+  * quantity: Number of shares to sell (0 for HOLD, partial for TRIM, all shares for SELL)
+  * current_price: Use current market price (assume September 2024 data)
+  * reason: Specific reason for the decision
+
+SELL CRITERIA:
+- SELL if: Stock is overvalued, fundamentals deteriorated, better opportunities exist
+- TRIM if: Position is too large (>20% of portfolio), take some profits, rebalance
+- HOLD if: Stock still has strong fundamentals and growth potential
+
+You must provide sell decisions for ALL current holdings, even if the decision is HOLD.
 """
 
         prompt = f"""You are an aggressive growth-focused stock analyst managing a ${total_capital:,.2f} small/mid-cap portfolio.
@@ -262,18 +284,35 @@ Calculate share quantities based on current stock prices to stay within these do
             'remaining_cash': recommendations.get('remaining_cash', 0)
         }
         
-        # Validate sell decisions
+        # Validate sell decisions with current prices
         for sell_decision in recommendations.get('sell_decisions', []):
             ticker = sell_decision.get('ticker', '').upper()
             if ticker:
-                # Get current price to validate symbol exists
-                quote = stock_service.get_stock_quote(ticker)
-                if quote:
-                    sell_decision['current_price'] = quote['current_price']
-                    sell_decision['ticker'] = ticker
-                    validated['sell_decisions'].append(sell_decision)
-                else:
-                    print(f"Warning: Could not validate sell ticker {ticker}")
+                try:
+                    # Get current price to validate symbol exists and update price
+                    current_price = stock_service.get_current_price(ticker)
+                    if current_price and current_price > 0:
+                        validated_sell = sell_decision.copy()
+                        validated_sell['current_price'] = current_price  # Use real current price
+                        validated_sell['ticker'] = ticker
+                        
+                        # Ensure quantity is valid
+                        quantity = sell_decision.get('quantity', 0)
+                        if quantity < 0:
+                            validated_sell['quantity'] = 0
+                        
+                        validated['sell_decisions'].append(validated_sell)
+                        print(f"Validated sell decision for {ticker}: {sell_decision.get('action')} {quantity} shares @ ${current_price:.2f}")
+                    else:
+                        print(f"Warning: Could not get current price for sell ticker {ticker}")
+                except Exception as e:
+                    print(f"Failed to validate sell decision for {ticker}: {e}")
+                    # Fallback: Use AI-provided price
+                    validated_sell = sell_decision.copy()
+                    validated_sell['ticker'] = ticker
+                    validated_sell['api_validation_failed'] = True
+                    validated['sell_decisions'].append(validated_sell)
+                    print(f"Using AI-provided price for sell decision {ticker}")
         
         # Validate buy recommendations
         for buy_rec in recommendations.get('buy_recommendations', []):
@@ -333,14 +372,24 @@ Calculate share quantities based on current stock prices to stay within these do
             'remaining_cash': recommendations.get('remaining_cash', 0)
         }
         
-        # Process sell decisions (no price validation needed)
+        # Process sell decisions using OpenAI prices
         for sell_decision in recommendations.get('sell_decisions', []):
             ticker = sell_decision.get('ticker', '').upper()
             if ticker:
                 validated_sell = sell_decision.copy()
                 validated_sell['ticker'] = ticker
-                validated_sell['current_price'] = 'OpenAI Price'  # Placeholder since sells don't need current price
+                # Use AI-provided current price for sell decisions
+                ai_price = sell_decision.get('current_price', 0)
+                validated_sell['current_price'] = ai_price
+                validated_sell['using_openai_price'] = True
+                
+                # Ensure quantity is valid
+                quantity = sell_decision.get('quantity', 0)
+                if quantity < 0:
+                    validated_sell['quantity'] = 0
+                
                 validated['sell_decisions'].append(validated_sell)
+                print(f"Using OpenAI price for sell decision {ticker}: {sell_decision.get('action')} {quantity} shares @ ${ai_price:.2f}")
         
         # Process buy recommendations using OpenAI prices
         for buy_rec in recommendations.get('buy_recommendations', []):
