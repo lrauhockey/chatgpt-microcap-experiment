@@ -12,6 +12,7 @@ class PortfolioService:
         self.transactions_file = os.path.join(data_dir, "transactions.csv")
         self.holdings_file = os.path.join(data_dir, "holdings.csv")
         self.cash_file = os.path.join(data_dir, "cash.csv")
+        self.performance_file = os.path.join(data_dir, "daily_performance.csv")
         
         # Ensure data directory exists
         os.makedirs(data_dir, exist_ok=True)
@@ -238,20 +239,71 @@ class PortfolioService:
         return updated_holdings
     
     def get_portfolio_summary(self, stock_service) -> Dict:
-        """Get complete portfolio summary"""
+        """Get complete portfolio summary with stop loss information"""
         cash_balance = self.get_cash_balance()
         holdings = self.update_market_values(stock_service)
         
-        total_market_value = sum(h['total_market_value'] for h in holdings)
+        # Add stop loss information to holdings
+        holdings_with_stop_loss = self._add_stop_loss_to_holdings(holdings)
+        
+        total_market_value = sum(h['total_market_value'] for h in holdings_with_stop_loss)
         total_portfolio_value = cash_balance + total_market_value
         
         return {
             'cash_balance': cash_balance,
-            'holdings': holdings,
+            'holdings': holdings_with_stop_loss,
             'total_market_value': total_market_value,
             'total_portfolio_value': total_portfolio_value,
-            'holdings_count': len(holdings)
+            'holdings_count': len(holdings_with_stop_loss)
         }
+    
+    def _add_stop_loss_to_holdings(self, holdings: List[Dict]) -> List[Dict]:
+        """Add stop loss information to holdings from transaction history"""
+        transactions = self.get_transactions()
+        
+        # Create a map of ticker to stop loss prices from buy transactions
+        stop_loss_map = {}
+        for tx in transactions:
+            ticker = tx.get('ticker', '').upper()
+            stop_price = tx.get('stop_price', '')
+            
+            # Only consider buy transactions with stop prices
+            if tx.get('quantity') and tx.get('buy_price') and stop_price:
+                try:
+                    stop_loss_price = float(stop_price)
+                    if stop_loss_price > 0:
+                        # Use the most recent stop loss price for each ticker
+                        stop_loss_map[ticker] = stop_loss_price
+                except (ValueError, TypeError):
+                    continue
+        
+        # Add stop loss information to holdings
+        enriched_holdings = []
+        for holding in holdings:
+            ticker = holding['ticker']
+            enriched_holding = holding.copy()
+            
+            if ticker in stop_loss_map:
+                stop_loss_price = stop_loss_map[ticker]
+                current_price = holding['total_market_value'] / holding['quantity'] if holding['quantity'] > 0 else 0
+                
+                enriched_holding['stop_loss_price'] = stop_loss_price
+                enriched_holding['has_stop_loss'] = True
+                
+                # Calculate stop loss risk percentage
+                if current_price > 0:
+                    risk_percentage = ((current_price - stop_loss_price) / current_price) * 100
+                    enriched_holding['stop_loss_risk_pct'] = max(0, risk_percentage)  # Ensure non-negative
+                else:
+                    enriched_holding['stop_loss_risk_pct'] = 0
+            else:
+                enriched_holding['stop_loss_price'] = None
+                enriched_holding['has_stop_loss'] = False
+                enriched_holding['stop_loss_risk_pct'] = 0
+            
+            enriched_holdings.append(enriched_holding)
+        
+        return enriched_holdings
     
     def get_transactions(self) -> List[Dict]:
         """Get all transactions"""
@@ -264,3 +316,59 @@ class PortfolioService:
         except FileNotFoundError:
             pass
         return transactions
+    
+    def record_daily_performance(self, date: str, portfolio_value: float, portfolio_gain_loss: float, 
+                                portfolio_gain_loss_pct: float, spy_price: float, spy_gain_loss: float, 
+                                spy_gain_loss_pct: float):
+        """Record daily performance data"""
+        file_exists = os.path.exists(self.performance_file)
+        
+        # Check if entry for this date already exists
+        existing_data = []
+        if file_exists:
+            try:
+                with open(self.performance_file, 'r') as f:
+                    reader = csv.DictReader(f)
+                    existing_data = [row for row in reader if row['date'] != date]
+            except:
+                existing_data = []
+        
+        # Add new entry
+        new_entry = {
+            'date': date,
+            'portfolio_value': portfolio_value,
+            'portfolio_gain_loss': portfolio_gain_loss,
+            'portfolio_gain_loss_pct': portfolio_gain_loss_pct,
+            'spy_price': spy_price,
+            'spy_gain_loss': spy_gain_loss,
+            'spy_gain_loss_pct': spy_gain_loss_pct
+        }
+        existing_data.append(new_entry)
+        
+        # Write back to file
+        with open(self.performance_file, 'w', newline='') as f:
+            fieldnames = ['date', 'portfolio_value', 'portfolio_gain_loss', 'portfolio_gain_loss_pct', 
+                         'spy_price', 'spy_gain_loss', 'spy_gain_loss_pct']
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in existing_data:
+                writer.writerow(row)
+    
+    def get_daily_performance(self) -> List[Dict]:
+        """Get all daily performance records"""
+        performance_data = []
+        try:
+            with open(self.performance_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Convert numeric fields
+                    row['portfolio_value'] = float(row['portfolio_value'])
+                    row['portfolio_gain_loss'] = float(row['portfolio_gain_loss'])
+                    row['portfolio_gain_loss_pct'] = float(row['portfolio_gain_loss_pct'])
+                    row['spy_price'] = float(row['spy_price'])
+                    row['spy_gain_loss'] = float(row['spy_gain_loss'])
+                    row['spy_gain_loss_pct'] = float(row['spy_gain_loss_pct'])
+                    performance_data.append(row)
+        except FileNotFoundError:
+            pass
+        return performance_data
