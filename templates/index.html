@@ -640,6 +640,12 @@
                                     <strong>Quantity:</strong> ${holding.quantity}<br>
                                     <strong>Avg Cost:</strong> $${holding.average_cost.toFixed(2)}<br>
                                     <strong>Market Value:</strong> $${holding.total_market_value.toLocaleString()}<br>
+                                    ${holding.has_stop_loss ? `
+                                        <strong>🛑 Stop Loss:</strong> $${holding.stop_loss_price.toFixed(2)} 
+                                        <span class="badge bg-info text-dark">${holding.stop_loss_risk_pct.toFixed(1)}% protection</span><br>
+                                    ` : `
+                                        <strong>🛑 Stop Loss:</strong> <span class="text-muted">Not set</span><br>
+                                    `}
                                     <span class="${gainLossClass}">
                                         <strong>P&L:</strong> ${gainLoss >= 0 ? '+' : ''}$${gainLoss.toFixed(2)} (${gainLossPercent >= 0 ? '+' : ''}${gainLossPercent.toFixed(2)}%)
                                     </span>
@@ -1337,9 +1343,21 @@
                                     <div class="row g-2 mb-2">
                                         <div class="col-md-6">
                                             <label class="form-label small">Stop Loss ($)</label>
-                                            <input type="number" class="form-control form-control-sm ai-stop-loss" 
-                                                   value="${buy.stop_loss_price?.toFixed(2) || ''}" step="0.01" data-index="${index}">
-                                            <small class="text-muted">AI suggested: $${buy.stop_loss_price?.toFixed(2) || 'N/A'}</small>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text">🛑</span>
+                                                <input type="number" class="form-control ai-stop-loss" 
+                                                       value="${buy.stop_loss_price?.toFixed(2) || ''}" step="0.01" data-index="${index}">
+                                                <span class="input-group-text">${buy.stop_loss_corrected ? '⚠️' : '✅'}</span>
+                                            </div>
+                                            <small class="text-muted">
+                                                AI suggested: $${buy.stop_loss_price?.toFixed(2) || 'N/A'}
+                                                ${buy.stop_loss_corrected ? ' (Auto-corrected)' : ''}
+                                            </small>
+                                            ${buy.current_price && buy.stop_loss_price ? `
+                                                <small class="text-info d-block">
+                                                    Risk: ${(((buy.current_price - buy.stop_loss_price) / buy.current_price) * 100).toFixed(1)}% downside protection
+                                                </small>
+                                            ` : ''}
                                         </div>
                                         <div class="col-md-6">
                                             <label class="form-label small">Reason</label>
