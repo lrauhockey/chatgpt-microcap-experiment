@@ -592,8 +592,50 @@ def auto_execute_ai_trades():
 
 
 def calculate_portfolio_value_on_date(target_date, transactions):
-    """Calculate portfolio value on a specific date"""
-    relevant_transactions = [t for t in transactions if t['date'] <= target_date]
+    """Calculate portfolio value on a specific date using actual portfolio data"""
+    print(f"=== PORTFOLIO CALCULATION DEBUG for {target_date} ===")
+    
+    # For current date, use actual portfolio data instead of reconstructing from transactions
+    today = datetime.now().strftime('%Y-%m-%d')
+    if target_date == today:
+        print("Using actual portfolio data for current date")
+        try:
+            # Get actual portfolio summary
+            portfolio_summary = portfolio_service.get_portfolio_summary(stock_service)
+            
+            starting_cash = 10000.0
+            total_value = portfolio_summary['total_portfolio_value']
+            cash_balance = portfolio_summary['cash_balance']
+            holdings_value = portfolio_summary['total_market_value']
+            
+            gain_loss = total_value - starting_cash
+            gain_loss_percent = (gain_loss / starting_cash) * 100 if starting_cash > 0 else 0
+            
+            print(f"Actual portfolio data:")
+            print(f"Cash balance: ${cash_balance:.2f}")
+            print(f"Holdings value: ${holdings_value:.2f}")
+            print(f"Total value: ${total_value:.2f}")
+            print(f"Gain/Loss: ${gain_loss:.2f} ({gain_loss_percent:.2f}%)")
+            print(f"=== END PORTFOLIO CALCULATION DEBUG ===")
+            
+            return {
+                'total_value': total_value,
+                'cash': cash_balance,
+                'holdings_value': holdings_value,
+                'total_invested': starting_cash - cash_balance + holdings_value,
+                'gain_loss': gain_loss,
+                'gain_loss_percent': gain_loss_percent
+            }
+        except Exception as e:
+            print(f"Failed to get actual portfolio data: {e}")
+            # Fall back to transaction reconstruction
+    
+    # For historical dates, reconstruct from transactions
+    print("Reconstructing from transaction history")
+    relevant_transactions = [t for t in transactions if t['date'][:10] <= target_date]
+    
+    print(f"Total transactions: {len(transactions)}")
+    print(f"Relevant transactions: {len(relevant_transactions)}")
     
     holdings = {}
     total_invested = 0
@@ -612,6 +654,8 @@ def calculate_portfolio_value_on_date(target_date, transactions):
                 holdings[ticker] = 0
             holdings[ticker] += quantity
             
+            print(f"BUY: {ticker} - {quantity} shares @ ${float(t['buy_price']):.2f} = ${total_cost:.2f}")
+            
         # Check if this is a sell transaction (has sell_quantity and sell_price)
         elif t.get('sell_quantity') and t.get('sell_price'):
             sell_quantity = float(t['sell_quantity'])
@@ -624,6 +668,12 @@ def calculate_portfolio_value_on_date(target_date, transactions):
                 # Remove ticker if quantity becomes 0 or negative
                 if holdings[ticker] <= 0:
                     del holdings[ticker]
+            
+            print(f"SELL: {ticker} - {sell_quantity} shares @ ${sell_price:.2f} = ${sell_total:.2f}")
+
+    print(f"Total invested: ${total_invested:.2f}")
+    print(f"Total proceeds: ${total_proceeds:.2f}")
+    print(f"Holdings: {holdings}")
 
     # Calculate current market value of holdings
     holdings_value = 0
@@ -631,7 +681,9 @@ def calculate_portfolio_value_on_date(target_date, transactions):
         if quantity > 0:
             quote = stock_service.get_cached_quote(ticker)
             if quote:
-                holdings_value += quote['current_price'] * quantity
+                market_value = quote['current_price'] * quantity
+                holdings_value += market_value
+                print(f"HOLDING: {ticker} - {quantity} shares @ ${quote['current_price']:.2f} = ${market_value:.2f}")
 
     # Calculate cash position
     starting_cash = 10000  # As defined in portfolio_service
@@ -641,6 +693,13 @@ def calculate_portfolio_value_on_date(target_date, transactions):
     total_value = current_cash + holdings_value
     gain_loss = total_value - starting_cash
     gain_loss_percent = (gain_loss / starting_cash) * 100 if starting_cash > 0 else 0
+    
+    print(f"Starting cash: ${starting_cash:.2f}")
+    print(f"Current cash: ${current_cash:.2f}")
+    print(f"Holdings value: ${holdings_value:.2f}")
+    print(f"Total value: ${total_value:.2f}")
+    print(f"Gain/Loss: ${gain_loss:.2f} ({gain_loss_percent:.2f}%)")
+    print(f"=== END PORTFOLIO CALCULATION DEBUG ===")
     
     return {
         'total_value': total_value,
@@ -662,160 +721,44 @@ def get_cash_balance():
 
 @app.route('/api/portfolio/performance')
 def get_portfolio_performance():
-    """API endpoint to get portfolio performance data with S&P 500 comparison"""
+    """API endpoint to get portfolio performance data using daily performance tracking"""
     try:
         print("=== PERFORMANCE API CALLED ===")
-        transactions = portfolio_service.get_transactions()
-        print(f"Found {len(transactions)} transactions")
         
-        if not transactions:
-            print("No transactions found, returning empty data")
+        # Update today's performance first
+        today = datetime.now().strftime('%Y-%m-%d')
+        update_daily_performance(today)
+        
+        # Get performance data from file
+        performance_records = portfolio_service.get_daily_performance()
+        
+        if not performance_records:
+            print("No performance records found")
             return jsonify({'performance_data': [], 'total_gain_loss': 0, 'total_gain_loss_percent': 0})
         
-        # Get start date from first transaction
-        transaction_dates = [t['date'][:10] for t in transactions]
-        start_date = min(transaction_dates)
-        today = datetime.now().strftime('%Y-%m-%d')
-        print(f"Date range: {start_date} to {today}")
-        
-        # Generate all dates from start to today
-        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-        today_dt = datetime.strptime(today, '%Y-%m-%d')
-        
-        all_dates = []
-        current_dt = start_dt
-        while current_dt <= today_dt:
-            all_dates.append(current_dt.strftime('%Y-%m-%d'))
-            current_dt += timedelta(days=1)
-        print(f"Generated {len(all_dates)} dates")
-        
-        # Get S&P 500 data for the entire period
-        sp500_data = {}
-        try:
-            print("Fetching S&P 500 data...")
-            import yfinance as yf
-            
-            # Try multiple approaches to get S&P 500 data
-            sp500_success = False
-            
-            # Method 1: Try with period
-            try:
-                sp500 = yf.Ticker("^GSPC")
-                hist = sp500.history(period="1mo")  # Get more data to ensure coverage
-                if not hist.empty:
-                    for date, row in hist.iterrows():
-                        date_str = date.strftime('%Y-%m-%d')
-                        sp500_data[date_str] = row['Close']
-                    sp500_success = True
-                    print(f"Method 1 success: Got S&P 500 data for {len(sp500_data)} dates")
-            except Exception as e1:
-                print(f"Method 1 failed: {e1}")
-            
-            # Method 2: Try with specific date range if method 1 failed
-            if not sp500_success:
-                try:
-                    # Extend the date range to ensure we get data
-                    extended_start = (datetime.strptime(start_date, '%Y-%m-%d') - timedelta(days=7)).strftime('%Y-%m-%d')
-                    extended_end = (datetime.strptime(today, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
-                    hist = sp500.history(start=extended_start, end=extended_end)
-                    if not hist.empty:
-                        for date, row in hist.iterrows():
-                            date_str = date.strftime('%Y-%m-%d')
-                            sp500_data[date_str] = row['Close']
-                        sp500_success = True
-                        print(f"Method 2 success: Got S&P 500 data for {len(sp500_data)} dates")
-                except Exception as e2:
-                    print(f"Method 2 failed: {e2}")
-            
-            # Method 3: Use alternative ticker symbols
-            if not sp500_success:
-                for ticker in ["SPY", "VOO", "IVV"]:  # S&P 500 ETFs as alternatives
-                    try:
-                        print(f"Trying alternative ticker: {ticker}")
-                        alt_ticker = yf.Ticker(ticker)
-                        hist = alt_ticker.history(period="1mo")
-                        if not hist.empty:
-                            for date, row in hist.iterrows():
-                                date_str = date.strftime('%Y-%m-%d')
-                                sp500_data[date_str] = row['Close']
-                            sp500_success = True
-                            print(f"Alternative ticker {ticker} success: Got data for {len(sp500_data)} dates")
-                            break
-                    except Exception as e3:
-                        print(f"Alternative ticker {ticker} failed: {e3}")
-                        continue
-            
-            if sp500_success:
-                print(f"S&P 500 data available for dates: {sorted(list(sp500_data.keys()))}")
-            else:
-                raise Exception("All S&P 500 data methods failed")
-                
-        except Exception as e:
-            print(f"All S&P 500 methods failed: {e}")
-            # Create realistic mock data for comparison
-            print("Creating realistic mock S&P 500 data for demonstration")
-            base_price = 5800  # Approximate current S&P 500 level
-            for i, date in enumerate(all_dates):
-                # Create more realistic daily changes (typically -1% to +1%)
-                import random
-                random.seed(hash(date))  # Consistent "random" based on date
-                daily_change = (random.random() - 0.5) * 2  # -1% to +1%
-                sp500_data[date] = base_price * (1 + (daily_change/100))
-            print(f"Created mock S&P 500 data for {len(sp500_data)} dates")
-        
-        # Calculate performance for each day
+        # Convert to chart format
         performance_data = []
-        portfolio_baseline = None
-        sp500_baseline = None
-        
-        for i, date in enumerate(all_dates):
-            if i % 5 == 0:  # Log every 5th date to avoid spam
-                print(f"Processing date {i+1}/{len(all_dates)}: {date}")
-            
-            # Calculate portfolio value on this date
-            daily_value = calculate_portfolio_value_on_date(date, transactions)
-            portfolio_value = daily_value['total_value']
-            
-            # Get S&P 500 value for this date (use previous day if weekend/holiday)
-            sp500_value = sp500_data.get(date)
-            if sp500_value is None and performance_data:
-                # Use last known S&P 500 value for weekends/holidays
-                sp500_value = performance_data[-1].get('sp500_value')
-            
-            # Set baseline (first date)
-            if portfolio_baseline is None:
-                portfolio_baseline = portfolio_value
-                print(f"Portfolio baseline set to: ${portfolio_baseline}")
-            if sp500_baseline is None and sp500_value is not None:
-                sp500_baseline = sp500_value
-                print(f"S&P 500 baseline set to: {sp500_baseline}")
-            
-            # Calculate percentage change from baseline
-            portfolio_pct_change = ((portfolio_value - portfolio_baseline) / portfolio_baseline) * 100 if portfolio_baseline else 0
-            sp500_pct_change = ((sp500_value - sp500_baseline) / sp500_baseline) * 100 if sp500_baseline and sp500_value else 0
-            
+        for record in performance_records:
             performance_data.append({
-                'date': date,
-                'portfolio_pct_change': round(portfolio_pct_change, 3),
-                'sp500_pct_change': round(sp500_pct_change, 3),
-                'portfolio_value': portfolio_value,
-                'sp500_value': sp500_value
+                'date': record['date'],
+                'portfolio_pct_change': round(record['portfolio_gain_loss_pct'], 3),
+                'sp500_pct_change': round(record['spy_gain_loss_pct'], 3),
+                'portfolio_value': record['portfolio_value'],
+                'sp500_value': record['spy_price']
             })
         
-        print(f"Generated {len(performance_data)} performance data points")
+        # Get current totals
+        latest_record = performance_records[-1]
         
-        # Get current summary
-        current_summary = calculate_portfolio_value_on_date(today, transactions)
-        print(f"Current summary: Gain/Loss = ${current_summary['gain_loss']:.2f} ({current_summary['gain_loss_percent']:.2f}%)")
-
         result = {
             'performance_data': performance_data,
-            'total_gain_loss': current_summary['gain_loss'],
-            'total_gain_loss_percent': current_summary['gain_loss_percent'],
-            'start_date': start_date,
-            'end_date': today
+            'total_gain_loss': latest_record['portfolio_gain_loss'],
+            'total_gain_loss_percent': latest_record['portfolio_gain_loss_pct'],
+            'start_date': performance_records[0]['date'],
+            'end_date': latest_record['date']
         }
         
+        print(f"Returned {len(performance_data)} performance data points")
         print("=== PERFORMANCE API SUCCESS ===")
         return jsonify(result)
         
@@ -824,6 +767,50 @@ def get_portfolio_performance():
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Failed to get portfolio performance: {str(e)}'}), 500
+
+def update_daily_performance(date: str):
+    """Update daily performance record for a specific date"""
+    try:
+        print(f"=== UPDATING DAILY PERFORMANCE for {date} ===")
+        
+        # Get portfolio data
+        portfolio_summary = portfolio_service.get_portfolio_summary(stock_service)
+        portfolio_value = portfolio_summary['total_portfolio_value']
+        
+        # Calculate portfolio gain/loss from $10,000 baseline
+        baseline = 10000.0
+        portfolio_gain_loss = portfolio_value - baseline
+        portfolio_gain_loss_pct = (portfolio_gain_loss / baseline) * 100
+        
+        # Get SPY data
+        spy_quote = stock_service.get_cached_quote("SPY")
+        spy_price = spy_quote['current_price'] if spy_quote else 659.30
+        
+        # Calculate SPY gain/loss from baseline (use first cached SPY price as baseline)
+        spy_baseline = 659.30  # Your cached baseline price
+        spy_gain_loss = spy_price - spy_baseline
+        spy_gain_loss_pct = (spy_gain_loss / spy_baseline) * 100
+        
+        print(f"Portfolio: ${portfolio_value:.2f} (${portfolio_gain_loss:+.2f}, {portfolio_gain_loss_pct:+.3f}%)")
+        print(f"SPY: ${spy_price:.2f} (${spy_gain_loss:+.2f}, {spy_gain_loss_pct:+.3f}%)")
+        
+        # Record the data
+        portfolio_service.record_daily_performance(
+            date=date,
+            portfolio_value=portfolio_value,
+            portfolio_gain_loss=portfolio_gain_loss,
+            portfolio_gain_loss_pct=portfolio_gain_loss_pct,
+            spy_price=spy_price,
+            spy_gain_loss=spy_gain_loss,
+            spy_gain_loss_pct=spy_gain_loss_pct
+        )
+        
+        print(f"=== DAILY PERFORMANCE UPDATED ===")
+        
+    except Exception as e:
+        print(f"Error updating daily performance: {e}")
+        import traceback
+        traceback.print_exc()
 
 @app.route('/api/portfolio/refresh-quotes', methods=['POST'])
 def refresh_portfolio_quotes():
