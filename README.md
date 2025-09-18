@@ -23,10 +23,11 @@ A comprehensive Python Flask web application that combines real-time stock data,
 - Cash balance tracking and transaction history
 
 ### 📈 **Performance Analytics**
-- Interactive Chart.js performance visualization
-- Gain/loss tracking over time with color-coded charts
-- Portfolio value progression and trend analysis
-- Real-time performance metrics and percentages
+- Interactive Chart.js performance visualization with S&P 500 comparison
+- Daily performance tracking with persistent CSV storage
+- Portfolio vs. market benchmark analysis (SPY ETF)
+- Percentage-based gain/loss charts with baseline normalization
+- Real-time performance metrics and stop-loss monitoring
 
 ### ⏰ **Automated Trading Scheduler**
 - **9:30 AM Weekdays**: AI predictor with automatic trade execution
@@ -112,10 +113,11 @@ The scheduler will automatically:
 
 The system uses CSV files for data persistence:
 
-- **`data/transactions.csv`** - All buy/sell transactions with P&L
-- **`data/holdings.csv`** - Current portfolio holdings
+- **`data/transactions.csv`** - All buy/sell transactions with P&L and stop-loss prices
+- **`data/holdings.csv`** - Current portfolio holdings with market values
 - **`data/cash.csv`** - Cash balance tracking
-- **`data/cached_quotes.csv`** - 1-hour cached stock quotes
+- **`data/cached_quotes.csv`** - 1-hour cached stock quotes including SPY
+- **`data/daily_performance.csv`** - Daily portfolio and S&P 500 performance tracking
 
 ## 🎯 Usage Examples
 
@@ -154,13 +156,41 @@ The system starts with $10,000 in cash. Modify in `portfolio_service.py` if need
 ### **Trading Schedule**
 Modify `scheduler.py` to adjust trading times and frequency.
 
+### **Daily Performance Tracking**
+The system automatically creates and maintains a `daily_performance.csv` file with the following structure:
+```csv
+date,portfolio_value,portfolio_gain_loss,portfolio_gain_loss_pct,spy_price,spy_gain_loss,spy_gain_loss_pct
+2025-09-17,9989.2,-10.80,-0.108,659.18,-0.12,-0.018
+```
+
+**Key Features:**
+- **Automatic daily updates** when accessing performance charts
+- **Baseline tracking** from $10,000 initial portfolio value
+- **SPY benchmark comparison** using cached quote system
+- **Persistent storage** for historical performance analysis
+- **Accurate percentage calculations** for portfolio vs. market performance
+
 ## 📈 Performance Features
 
+### **Daily Performance Tracking System**
+- **Automated daily performance recording** in `daily_performance.csv`
+- **Portfolio vs. S&P 500 comparison** using SPY ETF as benchmark
+- **Baseline normalization** from $10,000 starting portfolio
+- **Percentage-based performance charts** for accurate comparison
+- **Persistent performance history** with CSV storage
+
+### **Portfolio Analytics**
 - **Real-time portfolio tracking** with gain/loss calculations
-- **Interactive charts** showing performance over time
+- **Interactive dual-line charts** (Portfolio vs. Market)
+- **Stop-loss monitoring** with risk percentage display
 - **Color-coded metrics** (green for gains, red for losses)
-- **Stop-loss protection** with automatic monitoring
-- **Transaction history** with detailed P&L tracking
+- **Transaction history** with detailed P&L and stop-loss tracking
+
+### **Market Comparison Features**
+- **SPY ETF integration** for S&P 500 market comparison
+- **Cached quote system** for efficient data retrieval
+- **Day-over-day performance** calculation and display
+- **Risk assessment** showing downside protection percentages
 
 ## 🚀 Advanced Features
 
