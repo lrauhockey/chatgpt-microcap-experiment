@@ -229,7 +229,6 @@ class MultiAPIStockService:
     
     def _get_finnhub_quote(self, symbol):
         """Get quote from Finnhub"""
-        load_dotenv()
         finnhub_key = os.getenv('FINHUB_API_KEY')
 
         if not finnhub_key:
