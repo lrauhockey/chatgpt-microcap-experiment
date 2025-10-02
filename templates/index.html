@@ -46,7 +46,13 @@
                         <button class="nav-link" id="transactions-tab" data-bs-toggle="tab" data-bs-target="#transactions" type="button" role="tab">📋 Transactions</button>
                     </li>
                     <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="images-tab" data-bs-toggle="tab" data-bs-target="#images" type="button" role="tab">🖼️ Images</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
                         <button class="nav-link" id="ai-predictor-tab" data-bs-toggle="tab" data-bs-target="#ai-predictor" type="button" role="tab">🤖 AI Predictor</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="portfolio-analysis-tab" data-bs-toggle="tab" data-bs-target="#portfolio-analysis" type="button" role="tab">📑 Portfolio Analysis</button>
                     </li>
                 </ul>
             </div>
@@ -252,6 +258,26 @@
                 </div>
             </div>
 
+            <!-- Images Tab -->
+            <div class="tab-pane fade" id="images" role="tabpanel">
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">🖼️ Portfolio Images</h5>
+                                <p class="text-muted">Click an image to view it larger. Sorted by newest first.</p>
+                                <div id="imagesLoading" class="text-center" style="display: none;">
+                                    <div class="spinner-border" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                </div>
+                                <div id="imagesContainer" class="row"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- AI Predictor Tab -->
             <div class="tab-pane fade" id="ai-predictor" role="tabpanel">
                 <div class="row mb-4">
@@ -342,6 +368,34 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Portfolio Analysis Tab -->
+            <div class="tab-pane fade" id="portfolio-analysis" role="tabpanel">
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h5 class="card-title">📑 Deep Dive: Portfolio Technical Analysis</h5>
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="form-check form-switch m-0">
+                                            <input class="form-check-input" type="checkbox" id="forceAnalysisRefresh">
+                                            <label class="form-check-label small" for="forceAnalysisRefresh">Force refresh</label>
+                                        </div>
+                                        <button class="btn btn-primary btn-sm" id="runPortfolioAnalysisBtn">
+                                            <span class="spinner-border spinner-border-sm d-none" id="analysisLoadingSpinner"></span>
+                                            Run Analysis
+                                        </button>
+                                    </div>
+                                </div>
+                                <p class="text-muted mb-2">For each holding, get exit targets, add levels, risk/return, red flags, and a buy/sell/hold call.</p>
+                                <div id="portfolioAnalysisInfo" class="alert alert-info" style="display: none;"></div>
+                                <div id="portfolioAnalysisContainer" class="row"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Loading Spinner -->
@@ -365,6 +419,22 @@
                         <h5 class="card-title">Historical Data</h5>
                         <canvas id="stockChart" width="400" height="200"></canvas>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div class="modal fade" id="imageModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="imageModalTitle">Image</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img id="imageModalImg" src="" class="img-fluid" alt="">
+                    <div class="small text-muted mt-2" id="imageModalMeta"></div>
                 </div>
             </div>
         </div>
@@ -745,6 +815,73 @@
             `;
 
             document.getElementById('transactionsContainer').innerHTML = tableHtml;
+        }
+
+        // Images tab functions
+        async function loadImages() {
+            const loading = document.getElementById('imagesLoading');
+            const container = document.getElementById('imagesContainer');
+            if (!loading || !container) return;
+            loading.style.display = 'block';
+            container.innerHTML = '';
+            try {
+                const resp = await fetch('/api/images');
+                const data = await resp.json();
+                if (resp.ok) {
+                    displayImages(data.images || []);
+                } else {
+                    container.innerHTML = `<div class="alert alert-danger">Error: ${data.error || 'Failed to load images'}</div>`;
+                }
+            } catch (err) {
+                container.innerHTML = `<div class="alert alert-danger">Error loading images: ${err.message}</div>`;
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function displayImages(images) {
+            const container = document.getElementById('imagesContainer');
+            if (!container) return;
+            if (!images || images.length === 0) {
+                container.innerHTML = `<div class="col-12"><div class="alert alert-info">No images found in the images/ directory.</div></div>`;
+                return;
+            }
+
+            let html = '';
+            images.forEach(img => {
+                const safeFilename = (img.filename || '').replace(/'/g, "\\'");
+                const safeUrl = (img.url || '').replace(/'/g, "\\'");
+                const safeCreatedAt = (img.created_at || '').replace(/'/g, "\\'");
+                html += `
+                    <div class="col-6 col-md-4 col-lg-3 mb-3">
+                        <div class="card h-100">
+                            <img src="${img.url}" class="card-img-top img-thumbnail" alt="${img.filename}"
+                                 style="cursor: pointer; max-height: 200px; object-fit: contain; background: #f8f9fa;"
+                                 onclick="openImageModal('${safeFilename}','${safeUrl}','${safeCreatedAt}')">
+                            <div class="card-body p-2">
+                                <div class="small text-muted">${img.created_at || ''}</div>
+                                <div class="text-truncate" title="${img.filename}">${img.filename}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        function openImageModal(filename, url, createdAt) {
+            const titleEl = document.getElementById('imageModalTitle');
+            const imgEl = document.getElementById('imageModalImg');
+            const metaEl = document.getElementById('imageModalMeta');
+            if (!titleEl || !imgEl) return;
+            titleEl.textContent = filename || 'Image';
+            imgEl.src = url || '';
+            imgEl.alt = filename || '';
+            if (metaEl) {
+                metaEl.textContent = createdAt ? `Added: ${createdAt}` : '';
+            }
+            const modal = new bootstrap.Modal(document.getElementById('imageModal'));
+            modal.show();
         }
 
         // Buy form price lookup and calculation functions
@@ -1663,10 +1800,141 @@
         document.getElementById('getRecommendationsBtn').addEventListener('click', getAIRecommendations);
         document.getElementById('executeTradesBtn').addEventListener('click', executeSelectedTrades);
 
+        // Portfolio Analysis functions
+        async function runPortfolioAnalysis() {
+            const btn = document.getElementById('runPortfolioAnalysisBtn');
+            const spinner = document.getElementById('analysisLoadingSpinner');
+            const info = document.getElementById('portfolioAnalysisInfo');
+            const container = document.getElementById('portfolioAnalysisContainer');
+            const force = document.getElementById('forceAnalysisRefresh')?.checked;
+            if (!btn || !container) return;
+            btn.disabled = true;
+            spinner.classList.remove('d-none');
+            info.style.display = 'none';
+            container.innerHTML = '';
+
+            try {
+                const url = `/api/ai/portfolio-analysis${force ? '?force=1' : ''}`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+                if (resp.ok && data.success) {
+                    displayPortfolioAnalysis(data.analyses || []);
+                    if (!data.analyses || data.analyses.length === 0) {
+                        info.className = 'alert alert-info';
+                        info.textContent = 'No holdings to analyze.';
+                        info.style.display = 'block';
+                    } else {
+                        const source = data.cached ? 'Cached result' : 'Fresh analysis';
+                        const when = data.created_at ? ` at ${new Date(data.created_at).toLocaleString()}` : '';
+                        info.className = 'alert alert-secondary';
+                        info.textContent = `${source}${when}.`;
+                        info.style.display = 'block';
+                    }
+                } else {
+                    info.className = 'alert alert-danger';
+                    info.textContent = `Error: ${data.error || 'Failed to get analysis'}`;
+                    info.style.display = 'block';
+                }
+            } catch (err) {
+                info.className = 'alert alert-danger';
+                info.textContent = `Error: ${err.message}`;
+                info.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+            }
+        }
+
+        function pillBadge(text, cls) {
+            return `<span class="badge rounded-pill ${cls} me-1">${text}</span>`;
+        }
+
+        function displayPortfolioAnalysis(analyses) {
+            const container = document.getElementById('portfolioAnalysisContainer');
+            if (!container) return;
+            if (!analyses || analyses.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            analyses.forEach(item => {
+                const rec = (item.recommendation || 'HOLD').toUpperCase();
+                const recClass = rec === 'BUY' || rec === 'ADD' ? 'bg-success' : (rec === 'SELL' || rec === 'TRIM' ? 'bg-danger' : 'bg-secondary');
+                const exitBadges = (item.exit_points || []).map(p => pillBadge(`Exit: $${Number(p).toFixed(2)}`, 'bg-outline-secondary border')).join(' ');
+                const addBadges = (item.add_levels || []).map(p => pillBadge(`Add: $${Number(p).toFixed(2)}`, 'bg-outline-primary border')).join(' ');
+                const risks = (item.risk_return?.risks || []).slice(0, 4).map(r => `<li>${r}</li>`).join('');
+                const rewards = (item.risk_return?.rewards || []).slice(0, 4).map(r => `<li>${r}</li>`).join('');
+                const riskScore = item.risk_return?.risk_score ?? 0;
+                const expRet = item.risk_return?.expected_return_pct ?? 0;
+                const redFlags = (item.red_flags || []).slice(0, 5).map(f => `<li>⚠️ ${f}</li>`).join('');
+                const current = Number(item.current_price || 0);
+                const avg = Number(item.average_cost || 0);
+                const pnlPct = avg > 0 ? ((current - avg) / avg) * 100 : 0;
+
+                html += `
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h5 class="card-title mb-1">${item.ticker || ''} <span class="badge ${recClass}">${rec}</span></h5>
+                                        <div class="small text-muted">Price: $${current.toFixed(2)} • Avg: $${avg.toFixed(2)} • P&L: ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%</div>
+                                    </div>
+                                    <a href="https://finance.yahoo.com/quote/${item.ticker || ''}/" target="_blank" class="btn btn-sm btn-outline-secondary">Yahoo</a>
+                                </div>
+                                <p class="mt-2">${item.summary || ''}</p>
+
+                                <div class="mb-2">
+                                    ${exitBadges}
+                                </div>
+                                <div class="mb-2">
+                                    ${addBadges}
+                                </div>
+
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <div class="border rounded p-2 h-100">
+                                            <div class="small fw-bold">Risk/Return</div>
+                                            <div class="small">Risk Score: ${Number(riskScore).toFixed(1)} / 10</div>
+                                            <div class="small">Expected Return: ${Number(expRet).toFixed(1)}%</div>
+                                            <div class="small mt-1">Risks:</div>
+                                            <ul class="small mb-1">${risks || '<li class="text-muted">N/A</li>'}</ul>
+                                            <div class="small">Rewards:</div>
+                                            <ul class="small mb-0">${rewards || '<li class="text-muted">N/A</li>'}</ul>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="border rounded p-2 h-100">
+                                            <div class="small fw-bold">Red Flags</div>
+                                            <ul class="small mb-2">${redFlags || '<li class="text-muted">None</li>'}</ul>
+                                            <div class="small">Confidence: ${(Number(item.confidence || 0) * 100).toFixed(0)}%</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        document.getElementById('runPortfolioAnalysisBtn')?.addEventListener('click', runPortfolioAnalysis);
+        
         // Tab change handlers
         document.getElementById('portfolio-tab').addEventListener('click', () => {
             loadPortfolioSummary();
             loadPortfolioPerformance();
+        });
+
+        document.getElementById('portfolio-analysis-tab').addEventListener('click', () => {
+            // Lazy-run analysis when tab is opened for the first time
+            const container = document.getElementById('portfolioAnalysisContainer');
+            if (container && container.children.length === 0) {
+                runPortfolioAnalysis();
+            }
         });
 
         document.getElementById('trade-tab').addEventListener('click', () => {
@@ -1675,6 +1943,10 @@
 
         document.getElementById('transactions-tab').addEventListener('click', () => {
             loadTransactions();
+        });
+
+        document.getElementById('images-tab').addEventListener('click', () => {
+            loadImages();
         });
 
         // Load default portfolio on page load
@@ -1686,4 +1958,3 @@
     </script>
 </body>
 </html>
- 
