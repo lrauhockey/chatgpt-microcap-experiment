@@ -372,4 +372,3 @@ class PortfolioService:
         except FileNotFoundError:
             pass
         return performance_data
- 
