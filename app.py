@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import yfinance as yf
 import requests
 import random
@@ -339,6 +339,44 @@ except ValueError as e:
 def index():
     return render_template('index.html')
 
+@app.route('/api/images')
+def list_images():
+    """Return a list of images in the images/ directory with created dates."""
+    images_dir = os.path.join(app.root_path, 'images')
+    allowed_exts = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'}
+    items = []
+    try:
+        for name in os.listdir(images_dir):
+            path = os.path.join(images_dir, name)
+            if not os.path.isfile(path):
+                continue
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in allowed_exts:
+                continue
+            try:
+                created_ts = os.path.getctime(path)
+            except Exception:
+                created_ts = os.path.getmtime(path)
+            size_bytes = os.path.getsize(path)
+            items.append({
+                'filename': name,
+                'url': f"/images/{name}",
+                'created_ts': created_ts,
+                'created_at': datetime.fromtimestamp(created_ts).strftime('%Y-%m-%d %H:%M:%S'),
+                'size_bytes': size_bytes
+            })
+        # Sort newest first
+        items.sort(key=lambda x: x['created_ts'], reverse=True)
+        return jsonify({'images': items})
+    except FileNotFoundError:
+        return jsonify({'images': []})
+
+@app.route('/images/<path:filename>')
+def serve_image(filename):
+    """Serve images from the images/ directory."""
+    images_dir = os.path.join(app.root_path, 'images')
+    return send_from_directory(images_dir, filename)
+
 @app.route('/api/quote/<symbol>')
 def get_quote(symbol):
     quote = stock_service.get_stock_quote(symbol)
@@ -588,6 +626,23 @@ def auto_execute_ai_trades():
     except Exception as e:
         print(f"CRITICAL ERROR in auto_execute_ai_trades: {str(e)}")
         return jsonify({'error': f'A critical error occurred: {str(e)}'}), 500
+
+
+@app.route('/api/ai/portfolio-analysis')
+def get_portfolio_analysis():
+    """AI-powered deep technical analysis of current holdings."""
+    try:
+        if ai_predictor_service is None:
+            return jsonify({'success': False, 'error': 'AI service not configured. Set OPENAI_API_KEY and restart.'}), 500
+
+        # Allow optional cache bypass with ?force=1
+        force_param = (request.args.get('force') or '').strip().lower()
+        force_refresh = force_param in ('1', 'true', 'yes', 'y')
+
+        result = ai_predictor_service.get_portfolio_deep_dive(portfolio_service, stock_service, force_refresh=force_refresh)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Failed to get portfolio analysis: {str(e)}'}), 500
 
 
 def calculate_portfolio_value_on_date(target_date, transactions):
