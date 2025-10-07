@@ -2,11 +2,6 @@
 
 A comprehensive Python Flask web application that combines real-time stock data, AI-powered trading recommendations, automated portfolio management, and performance tracking. Features include intelligent stock analysis, automated trading execution, and advanced portfolio monitoring.
 
-## DISCLAIMER
-This is for entertainment purposes only, and is just trying to see if calling an AI API could trade stocks and beat the SP500.  Investing does involve risk, and even I am just using this as fun. I am not personally trading on any stocks this is predicting, how well it is doing.  This does not reflect my job, any employement I ever had, just looking at the following https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment and wondering if i could do it also. this is just kind of a repsonse to it.
-
-I created a few rules, first i only checks once a day in the AM for new stocks to buy, what to sell, as well as checks a few times during the day to see if any stop losses were hit.  A real trading system should check more often, and due to AI's random working if you hit the system 100x you would get 100 different predictions. The UI has some ways to manaully call it, check our portfolio etc. 
-
 ## 🚀 Features
 
 ### 📊 **Real-Time Stock Data**
@@ -68,7 +63,7 @@ Create a `.env` file with your API keys:
 ```
 OPENAI_API_KEY=your_openai_api_key_here
 ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key_here
-FINNHUB_API_KEY=your_finnhub_key_here
+FINHUB_API_KEY=your_finnhub_key_here
 ```
 
 4. **Run the web application:**
@@ -152,7 +147,7 @@ The system uses CSV files for data persistence:
 ```bash
 OPENAI_API_KEY=your_openai_api_key_here
 ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key_here
-FINNHUB_API_KEY=your_finnhub_key_here
+FINHUB_API_KEY=your_finnhub_key_here
 ```
 
 ### **Initial Cash Balance**
