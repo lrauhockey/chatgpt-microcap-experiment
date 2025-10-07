@@ -58,13 +58,25 @@ A comprehensive Python Flask web application that combines real-time stock data,
 pip install -r requirements.txt
 ```
 
-3. **Set up environment variables:**
-Create a `.env` file with your API keys:
+3. **Set up environment variables (.env):**
+Copy the sample file and edit your values:
+```bash
+cp .env_sample .env
+```
+Then open `.env` and set at minimum:
 ```
 OPENAI_API_KEY=your_openai_api_key_here
 ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key_here
 FINHUB_API_KEY=your_finnhub_key_here
+
+# Email (Gmail)
+USERID=your_gmail_address@gmail.com
+APP_PASSWORD=your_16_char_gmail_app_password
 ```
+Notes:
+- Create a Gmail App Password in Google Account → Security → 2‑Step Verification → App passwords.
+- The scheduler auto-detects Gmail and uses `smtp.gmail.com:465` (SSL) and `imap.gmail.com` by default.
+- You may optionally override SMTP/IMAP via env: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USE_SSL`, `IMAP_HOST`, `IMAP_CHECK`.
 
 4. **Run the web application:**
 ```bash
@@ -144,11 +156,29 @@ The system uses CSV files for data persistence:
 ## 🔧 Configuration
 
 ### **Environment Variables**
-```bash
+Environment is loaded from `.env` (see Installation step). Core variables:
+```
+# APIs
 OPENAI_API_KEY=your_openai_api_key_here
 ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key_here
 FINHUB_API_KEY=your_finnhub_key_here
+
+# Email (Gmail)
+USERID=your_gmail_address@gmail.com
+APP_PASSWORD=your_16_char_gmail_app_password
+
+# Optional SMTP/IMAP overrides
+# SMTP_HOST=smtp.gmail.com
+# SMTP_PORT=465
+# SMTP_USE_SSL=true
+# IMAP_HOST=imap.gmail.com
+# IMAP_CHECK=true
+# SMTP_DEBUG=false
 ```
+
+#### Email Notes
+- The app prefers the `certifi` CA bundle for SSL. `requirements.txt` includes `certifi`.
+- If you need to bypass IMAP pre-check, set `IMAP_CHECK=false`.
 
 ### **Initial Cash Balance**
 The system starts with $10,000 in cash. Modify in `portfolio_service.py` if needed.
