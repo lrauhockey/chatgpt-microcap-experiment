@@ -20,6 +20,10 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
 from matplotlib.patches import Rectangle
+import smtplib
+import ssl
+from email.message import EmailMessage
+import imaplib
 
 # Load environment variables at startup
 load_dotenv()
@@ -47,6 +51,246 @@ class TradingScheduler:
         
         logger.info("Trading Scheduler initialized")
     
+    def _send_portfolio_email(self, subject_suffix: str = ""):
+        """Compose and send a portfolio summary email.
+        Uses IMAPSERVER (as SMTP host), USERID, and PWD from environment.
+        """
+        try:
+            # Gather portfolio data
+            summary = self.portfolio_service.get_portfolio_summary(self.stock_service)
+            cash_balance = summary['cash_balance']
+            total_market_value = summary['total_market_value']
+            total_portfolio_value = summary['total_portfolio_value']
+            holdings = summary['holdings']
+
+            starting_value = 10000.0
+            gain_loss = total_portfolio_value - starting_value
+            gain_loss_pct = (gain_loss / starting_value) * 100 if starting_value else 0.0
+
+            # Build HTML table for holdings
+            rows_html = []
+            for h in holdings:
+                qty = float(h.get('quantity', 0)) or 0.0
+                avg_cost = float(h.get('average_cost', 0)) or 0.0
+                current_price = (float(h.get('total_market_value', 0)) / qty) if qty > 0 else 0.0
+                mv = float(h.get('total_market_value', 0))
+                gl_dollar = (current_price - avg_cost) * qty
+                gl_pct = ((current_price - avg_cost) / avg_cost * 100) if avg_cost > 0 else 0.0
+                stop_price = h.get('stop_loss_price')
+                rows_html.append(
+                    f"<tr>"
+                    f"<td>{h.get('ticker','')}</td>"
+                    f"<td style='text-align:right'>{qty:,.0f}</td>"
+                    f"<td style='text-align:right'>$ {avg_cost:,.2f}</td>"
+                    f"<td style='text-align:right'>$ {current_price:,.2f}</td>"
+                    f"<td style='text-align:right'>$ {mv:,.2f}</td>"
+                    f"<td style='text-align:right'>$ {gl_dollar:+,.2f}</td>"
+                    f"<td style='text-align:right'>{gl_pct:+.2f}%</td>"
+                    f"<td style='text-align:right'>{('' if stop_price is None else f'$ {float(stop_price):,.2f}')}</td>"
+                    f"</tr>"
+                )
+
+            holdings_table = (
+                "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;font-family:Arial;font-size:13px'>"
+                "<thead><tr style='background:#f2f2f2'>"
+                "<th>Symbol</th><th>Quantity</th><th>Avg Cost</th><th>Current Price</th><th>Market Value</th><th>Gain/Loss $</th><th>Gain/Loss %</th><th>Stop Loss</th>"
+                "</tr></thead><tbody>" + "".join(rows_html) + "</tbody></table>"
+            ) if holdings else "<p>No current holdings.</p>"
+
+            # Optional stop loss summary
+            stop_rows = []
+            for h in holdings:
+                if h.get('has_stop_loss'):
+                    qty = float(h.get('quantity', 0)) or 0.0
+                    current_price = (float(h.get('total_market_value', 0)) / qty) if qty > 0 else 0.0
+                    stop_price = float(h.get('stop_loss_price')) if h.get('stop_loss_price') is not None else None
+                    if stop_price is not None:
+                        distance = current_price - stop_price
+                        distance_pct = (distance / current_price * 100) if current_price > 0 else 0.0
+                        stop_rows.append(
+                            f"<tr>"
+                            f"<td>{h.get('ticker','')}</td>"
+                            f"<td style='text-align:right'>$ {current_price:,.2f}</td>"
+                            f"<td style='text-align:right'>$ {stop_price:,.2f}</td>"
+                            f"<td style='text-align:right'>$ {distance:,.2f} ({distance_pct:+.2f}%)</td>"
+                            f"</tr>"
+                        )
+
+            stop_section = ""
+            if stop_rows:
+                stop_section = (
+                    "<h3>Stop Loss Checks</h3>"
+                    "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;font-family:Arial;font-size:13px'>"
+                    "<thead><tr style='background:#f2f2f2'>"
+                    "<th>Symbol</th><th>Current</th><th>Stop</th><th>Distance</th>"
+                    "</tr></thead><tbody>" + "".join(stop_rows) + "</tbody></table>"
+                )
+
+            # Email content
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+            subject = f"Portfolio Summary {subject_suffix} - {now_str}".strip()
+            html_body = f"""
+                <div style='font-family:Arial,sans-serif'>
+                    <h2>Portfolio Summary</h2>
+                    <p><b>As of:</b> {now_str}</p>
+                    <ul>
+                        <li><b>Current Cash Position:</b> $ {cash_balance:,.2f}</li>
+                        <li><b>Current Total Holdings (Market Value):</b> $ {total_market_value:,.2f}</li>
+                        <li><b>Total Portfolio Value:</b> $ {total_portfolio_value:,.2f}</li>
+                        <li><b>Gain/Loss:</b> $ {gain_loss:+,.2f} ({gain_loss_pct:+.2f}%)</li>
+                    </ul>
+                    <h3>Holdings</h3>
+                    {holdings_table}
+                    {stop_section}
+                </div>
+            """
+
+            text_body = (
+                f"Portfolio Summary\n"
+                f"As of: {now_str}\n\n"
+                f"Current Cash Position: $ {cash_balance:,.2f}\n"
+                f"Current Total Holdings (Market Value): $ {total_market_value:,.2f}\n"
+                f"Total Portfolio Value: $ {total_portfolio_value:,.2f}\n"
+                f"Gain/Loss: $ {gain_loss:+,.2f} ({gain_loss_pct:+.2f}%)\n\n"
+                f"Holdings: {len(holdings)} positions\n"
+            )
+
+            # Email setup from env
+            # Allow separate SMTP credentials; fallback to USERID and APP_PASSWORD only
+            user = os.getenv('SMTP_USER') or os.getenv('USERID')
+            # IMPORTANT: Do NOT fall back to shell PWD (current working directory)
+            # as a password. Use only SMTP_PWD or APP_PASSWORD.
+            pwd = os.getenv('SMTP_PWD') or os.getenv('APP_PASSWORD')
+            to_addr = 'larzgold@yahoo.com'
+
+            # Auto-detect Gmail defaults if USERID is Gmail and no explicit SMTP_HOST provided
+            is_gmail = bool(user and user.lower().endswith('@gmail.com'))
+            default_smtp_host = 'smtp.gmail.com' if is_gmail else (os.getenv('IMAPSERVER') or None)
+            default_smtp_port = 465 if is_gmail else 587
+            default_use_ssl = True if is_gmail else False
+
+            host = os.getenv('SMTP_HOST') or default_smtp_host
+            port = int(os.getenv('SMTP_PORT', str(default_smtp_port)))
+            # Respect explicit setting; otherwise use Gmail default
+            if 'SMTP_USE_SSL' in os.environ:
+                use_ssl = os.getenv('SMTP_USE_SSL', 'false').lower() in ('1', 'true', 'yes')
+            else:
+                use_ssl = default_use_ssl
+            trust_all = os.getenv('SMTP_TRUST_ALL', 'false').lower() in ('1', 'true', 'yes')
+
+            if not host or not user or not pwd:
+                logger.error("Email not sent: IMAPSERVER/USERID/PWD not configured in environment")
+                return
+
+            msg = EmailMessage()
+            msg['From'] = user
+            msg['To'] = to_addr
+            msg['Subject'] = subject
+            msg.set_content(text_body)
+            msg.add_alternative(html_body, subtype='html')
+
+            # Log chosen configuration
+            cred_source = 'SMTP_PWD' if os.getenv('SMTP_PWD') else ('APP_PASSWORD' if os.getenv('APP_PASSWORD') else 'UNKNOWN')
+            logger.info(f"Email config: SMTP host={host}, port={port}, use_ssl={use_ssl}, trust_all={trust_all}, gmail={is_gmail}, cred_source={cred_source}")
+
+            # Optional IMAP connectivity check (auth/host verification)
+            do_imap_check = os.getenv('IMAP_CHECK', 'true').lower() in ('1', 'true', 'yes')
+            inbox_folder = os.getenv('INBOX_FOLDER', 'INBOX')
+            default_imap_host = 'imap.gmail.com' if is_gmail else (os.getenv('IMAPSERVER') or host)
+            imap_host = os.getenv('IMAP_HOST') or default_imap_host
+            if do_imap_check:
+                try:
+                    logger.info(f"IMAP check: connecting to {imap_host} as {user}")
+                    with imaplib.IMAP4_SSL(imap_host, ssl_context=_context()) as imap_conn:
+                        imap_conn.login(os.getenv('IMAP_USER') or user, os.getenv('IMAP_PWD') or pwd)
+                        status, _ = imap_conn.select(inbox_folder)
+                        logger.info(f"IMAP select {inbox_folder} -> {status}")
+                        imap_conn.logout()
+                except Exception as ie:
+                    logger.warning(f"IMAP connectivity/auth check failed: {ie}")
+
+            # Try sequence: STARTTLS -> plain SMTP -> SMTP_SSL
+            smtp_debug = os.getenv('SMTP_DEBUG', 'false').lower() in ('1', 'true', 'yes')
+
+            def _context():
+                # Create SSL context, prefer certifi CA bundle when available
+                try:
+                    import certifi  # type: ignore
+                    ctx = ssl.create_default_context(cafile=certifi.where())
+                except Exception:
+                    ctx = ssl.create_default_context()
+                if trust_all:
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                return ctx
+
+            def try_starttls(h, p):
+                context = _context()
+                with smtplib.SMTP(h, p, timeout=20) as server:
+                    if smtp_debug:
+                        server.set_debuglevel(1)
+                    code, ehlo_resp = server.ehlo()
+                    logger.info(f"SMTP EHLO ({h}:{p}) -> {code}")
+                    server.starttls(context=context)
+                    code2, ehlo2 = server.ehlo()
+                    logger.info(f"SMTP STARTTLS EHLO -> {code2}")
+                    server.login(user, pwd)
+                    server.send_message(msg)
+
+            def try_plain(h, p):
+                with smtplib.SMTP(h, p, timeout=20) as server:
+                    if smtp_debug:
+                        server.set_debuglevel(1)
+                    code, ehlo_resp = server.ehlo()
+                    logger.info(f"SMTP EHLO (plain {h}:{p}) -> {code}")
+                    server.login(user, pwd)
+                    server.send_message(msg)
+
+            def try_ssl(h, p):
+                context = _context()
+                with smtplib.SMTP_SSL(h, p, context=context, timeout=20) as server:
+                    if smtp_debug:
+                        server.set_debuglevel(1)
+                    code, ehlo_resp = server.ehlo()
+                    logger.info(f"SMTP_SSL EHLO ({h}:{p}) -> {code}")
+                    server.login(user, pwd)
+                    server.send_message(msg)
+
+            sent = False
+            last_err = None
+
+            try:
+                if use_ssl:
+                    try_ssl(host, port)
+                else:
+                    try_starttls(host, port)
+                sent = True
+            except Exception as e1:
+                last_err = e1
+                logger.warning(f"STARTTLS/SSL attempt failed: {e1}")
+                # Retry plain SMTP on same port
+                try:
+                    try_plain(host, port)
+                    sent = True
+                except Exception as e2:
+                    last_err = e2
+                    logger.warning(f"Plain SMTP attempt failed: {e2}")
+                    # Retry SMTP_SSL on typical SSL port if not already tried
+                    try:
+                        ssl_port = 465 if port != 465 else port
+                        try_ssl(host, ssl_port)
+                        sent = True
+                    except Exception as e3:
+                        last_err = e3
+                        logger.error(f"SMTP_SSL fallback failed: {e3}")
+
+            if not sent:
+                raise last_err or RuntimeError("Unknown SMTP error")
+
+            logger.info(f"📧 Portfolio email sent to {to_addr}")
+        except Exception as e:
+            logger.error(f"Failed to send portfolio email: {str(e)}")
+
     def run_ai_predictor_with_execution(self):
         """Run AI predictor at 9:30 AM and execute trades automatically"""
         try:
@@ -226,6 +470,9 @@ class TradingScheduler:
             # Update cached quotes for all holdings
             self.update_all_cached_quotes()
             
+            # Send portfolio email summary after execution
+            self._send_portfolio_email(subject_suffix="- After AI Execution")
+            
         except Exception as e:
             logger.error(f"Error in AI predictor execution: {str(e)}")
     
@@ -317,6 +564,9 @@ class TradingScheduler:
             
             # Update cached quotes for all holdings
             self.update_all_cached_quotes()
+            
+            # Send portfolio email summary after stop loss check
+            self._send_portfolio_email(subject_suffix="- After Stop Loss Check")
             
         except Exception as e:
             logger.error(f"Error in stop loss check: {str(e)}")
