@@ -51,7 +51,7 @@ class TradingScheduler:
         
         logger.info("Trading Scheduler initialized")
     
-    def _send_portfolio_email(self, subject_suffix: str = ""):
+    def _send_portfolio_email(self, subject_suffix: str = "", trades: dict | None = None):
         """Compose and send a portfolio summary email.
         Uses IMAPSERVER (as SMTP host), USERID, and PWD from environment.
         """
@@ -126,6 +126,81 @@ class TradingScheduler:
                     "</tr></thead><tbody>" + "".join(stop_rows) + "</tbody></table>"
                 )
 
+            # Optional trades section (from this run)
+            trades_section_html = ""
+            trades_section_text = ""
+            if trades:
+                buy_rows = []
+                for b in trades.get('buys', []) or []:
+                    ticker = b.get('ticker', '')
+                    qty = b.get('quantity', 0)
+                    price = b.get('price', 0.0)
+                    stop_loss = b.get('stop_loss') or b.get('stop_loss_price')
+                    buy_rows.append(
+                        f"<tr><td>{ticker}</td>"
+                        f"<td style='text-align:right'>{qty}</td>"
+                        f"<td style='text-align:right'>$ {float(price):,.2f}</td>"
+                        f"<td style='text-align:right'>{('' if stop_loss in (None, '') else f'$ {float(stop_loss):,.2f}')}</td>"
+                        f"</tr>"
+                    )
+                sell_rows = []
+                for s in trades.get('sells', []) or []:
+                    ticker = s.get('ticker', '')
+                    action = s.get('action', 'SELL')
+                    qty = s.get('quantity', 0)
+                    price = s.get('price', 0.0)
+                    proceeds = None
+                    gain_loss = None
+                    res = s.get('result') or {}
+                    try:
+                        proceeds = float(res.get('total_proceeds')) if res.get('total_proceeds') is not None else None
+                    except Exception:
+                        proceeds = None
+                    try:
+                        gain_loss = float(res.get('gain_loss')) if res.get('gain_loss') is not None else None
+                    except Exception:
+                        gain_loss = None
+                    sell_rows.append(
+                        f"<tr><td>{ticker}</td>"
+                        f"<td>{action}</td>"
+                        f"<td style='text-align:right'>{qty}</td>"
+                        f"<td style='text-align:right'>$ {float(price):,.2f}</td>"
+                        f"<td style='text-align:right'>{'' if proceeds is None else f'$ {proceeds:,.2f}'}</td>"
+                        f"<td style='text-align:right'>{'' if gain_loss is None else f'$ {gain_loss:+,.2f}'}</td>"
+                        f"</tr>"
+                    )
+
+                trades_html_parts = ["<h3>Today's Executed Trades</h3>"]
+                if buy_rows:
+                    trades_html_parts.append(
+                        "<h4>Buys</h4>"
+                        "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;font-family:Arial;font-size:13px'>"
+                        "<thead><tr style='background:#f2f2f2'><th>Symbol</th><th>Qty</th><th>Price</th><th>Stop Loss</th></tr></thead>"
+                        f"<tbody>{''.join(buy_rows)}</tbody></table>"
+                    )
+                if sell_rows:
+                    trades_html_parts.append(
+                        "<h4>Sells</h4>"
+                        "<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;font-family:Arial;font-size:13px'>"
+                        "<thead><tr style='background:#f2f2f2'><th>Symbol</th><th>Action</th><th>Qty</th><th>Price</th><th>Proceeds</th><th>Gain/Loss</th></tr></thead>"
+                        f"<tbody>{''.join(sell_rows)}</tbody></table>"
+                    )
+                trades_section_html = "".join(trades_html_parts)
+
+                # Text summary
+                buys_text = "\n".join([
+                    f"BUY {b.get('quantity','?')} {b.get('ticker','?')} @ $ {float(b.get('price',0)):,.2f}"
+                    + (f" (Stop {float((b.get('stop_loss') or b.get('stop_loss_price'))):,.2f})" if (b.get('stop_loss') or b.get('stop_loss_price')) else "")
+                    for b in (trades.get('buys') or [])
+                ])
+                sells_text = "\n".join([
+                    f"{s.get('action','SELL')} {s.get('quantity','?')} {s.get('ticker','?')} @ $ {float(s.get('price',0)):,.2f}"
+                    + (f" | Proceeds: $ {float((s.get('result') or {}).get('total_proceeds')):,.2f}" if (s.get('result') or {}).get('total_proceeds') else "")
+                    + (f" | P/L: $ {float((s.get('result') or {}).get('gain_loss')):+,.2f}" if (s.get('result') or {}).get('gain_loss') is not None else "")
+                    for s in (trades.get('sells') or [])
+                ])
+                trades_section_text = ("Executed Trades:\n" + (buys_text + ("\n" if buys_text and sells_text else "") + sells_text)).strip()
+
             # Email content
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M')
             subject = f"Portfolio Summary {subject_suffix} - {now_str}".strip()
@@ -139,13 +214,14 @@ class TradingScheduler:
                         <li><b>Total Portfolio Value:</b> $ {total_portfolio_value:,.2f}</li>
                         <li><b>Gain/Loss:</b> $ {gain_loss:+,.2f} ({gain_loss_pct:+.2f}%)</li>
                     </ul>
+                    {trades_section_html}
                     <h3>Holdings</h3>
                     {holdings_table}
                     {stop_section}
                 </div>
             """
 
-            text_body = (
+            base_text = (
                 f"Portfolio Summary\n"
                 f"As of: {now_str}\n\n"
                 f"Current Cash Position: $ {cash_balance:,.2f}\n"
@@ -154,6 +230,7 @@ class TradingScheduler:
                 f"Gain/Loss: $ {gain_loss:+,.2f} ({gain_loss_pct:+.2f}%)\n\n"
                 f"Holdings: {len(holdings)} positions\n"
             )
+            text_body = base_text + ("\n\n" + trades_section_text if trades_section_text else "")
 
             # Email setup from env
             # Allow separate SMTP credentials; fallback to USERID and APP_PASSWORD only
@@ -470,8 +547,11 @@ class TradingScheduler:
             # Update cached quotes for all holdings
             self.update_all_cached_quotes()
             
-            # Send portfolio email summary after execution
-            self._send_portfolio_email(subject_suffix="- After AI Execution")
+            # Send portfolio + trades email summary after execution
+            self._send_portfolio_email(subject_suffix="- After AI Execution", trades={
+                'sells': sell_results,
+                'buys': buy_results
+            })
             
         except Exception as e:
             logger.error(f"Error in AI predictor execution: {str(e)}")
