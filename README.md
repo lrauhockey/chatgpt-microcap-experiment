@@ -2,6 +2,12 @@
 
 A comprehensive Python Flask web application that combines real-time stock data, AI-powered trading recommendations, automated portfolio management, and performance tracking. Features include intelligent stock analysis, automated trading execution, and advanced portfolio monitoring.
 
+Note: this is not an offer to buy or sell stock. This is was built as an experiment to see if ChatGPT could trade or not.  
+I don't endorse anyone using this to manage thier portfolo. It is a good example of testing out some APIs including Open AI API
+Please invest with a professional!   This does not represent my current, past or future employment. 
+All the code was written by AI (incluing the prompt to AI ) as this was also used as a demo to how to vibe code a system. 
+This was in response to https://github.com/LuckyOne7777/ChatGPT-Micro-Cap-Experiment trading success. 
+
 ## 🚀 Features
 
 ### 📊 **Real-Time Stock Data**
